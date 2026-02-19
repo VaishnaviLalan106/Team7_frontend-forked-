@@ -26,7 +26,7 @@ const sidebarStyle = {
 };
 
 export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }) {
-    const { logout } = useAuth();
+    const { logout, user } = useAuth();
     const navigate = useNavigate();
 
     const handleLogout = () => { logout(); navigate('/'); };
@@ -56,6 +56,30 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                     <X size={20} />
                 </button>
             </div>
+
+            {/* Job Readiness Badge */}
+            {user?.isJobReady && !isCollapsed && (
+                <div style={{ padding: '4px 12px 12px' }}>
+                    <div style={{
+                        background: 'rgba(0, 245, 255, 0.1)',
+                        border: '1px solid rgba(0, 245, 255, 0.2)',
+                        borderRadius: 8,
+                        padding: '8px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        boxShadow: '0 4px 15px -5px rgba(0, 245, 255, 0.3)'
+                    }}>
+                        <Sparkles size={12} color="#00f5ff" />
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#00f5ff', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Job Ready</span>
+                    </div>
+                </div>
+            )}
+            {user?.isJobReady && isCollapsed && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }} title="Job Ready!">
+                    <Sparkles size={16} color="#00f5ff" />
+                </div>
+            )}
 
             {/* Nav links */}
             <nav style={{ flex: 1, padding: '12px 12px', overflowY: 'auto', overflowX: 'hidden' }}>
@@ -137,32 +161,6 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                     </>
                 )}
             </AnimatePresence>
-
-            {/* Mobile bottom nav */}
-            <div className="md:hidden" style={{
-                position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 30,
-                display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-                padding: '8px 4px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
-                background: 'rgba(5,10,21,0.95)', backdropFilter: 'blur(24px)',
-                borderTop: '1px solid rgba(255,255,255,0.04)',
-            }}>
-                {navItems.slice(0, 5).map((item) => {
-                    const Icon = item.icon;
-                    return (
-                        <NavLink key={item.path} to={item.path} end={item.path === '/dashboard'}
-                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: 6, textDecoration: 'none' }}
-                            className={({ isActive }) => isActive ? 'text-cyan' : ''}
-                        >
-                            {({ isActive }) => (
-                                <>
-                                    <Icon size={18} color={isActive ? '#00f5ff' : '#475569'} />
-                                    <span style={{ fontSize: 10, fontWeight: 500, color: isActive ? '#00f5ff' : '#475569' }}>{item.label.split(' ')[0]}</span>
-                                </>
-                            )}
-                        </NavLink>
-                    );
-                })}
-            </div>
         </>
     );
 }

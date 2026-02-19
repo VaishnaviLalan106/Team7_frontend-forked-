@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { ClipboardList, Clock, CheckCircle2, XCircle, BarChart3, ArrowLeft, Lock, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { ClipboardList, Clock, CheckCircle2, XCircle, BarChart3, ArrowLeft, Lock, Sparkles, Zap, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, Cell, CartesianGrid } from 'recharts';
 import { mockQuestions } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
@@ -16,7 +17,8 @@ export default function MockTest() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [testType, setTestType] = useState(null);
     const [activeQuestions, setActiveQuestions] = useState([]);
-    const { addXp, user, recordTestResult } = useAuth();
+    const [activeProject, setActiveProject] = useState(null);
+    const { addXp, user, recordTestResult, toggleProjectStep } = useAuth();
     const hasAnalyzed = user?.hasAnalyzed;
 
     const testTypes = [
@@ -99,41 +101,230 @@ export default function MockTest() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
                     {testTypes.map((t, i) => {
                         const Icon = t.icon;
+                        const isLocked = !hasAnalyzed;
                         return (
                             <motion.div key={i} className="dash-card" initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: i * 0.08 }}
                                 style={{
-                                    cursor: 'pointer',
-                                    opacity: 1,
+                                    cursor: isLocked ? 'not-allowed' : 'pointer',
+                                    opacity: isLocked ? 0.6 : 1,
                                     position: 'relative',
                                     overflow: 'hidden',
                                     gridColumn: t.id === 'coding' ? '1 / -1' : 'span 1'
                                 }}
-                                onClick={() => startTest(t.id)}>
+                                onClick={() => !isLocked && startTest(t.id)}>
 
                                 <div style={{
                                     position: 'absolute', top: 12, right: 12,
-                                    background: 'rgba(0,245,255,0.1)', color: '#00f5ff',
+                                    background: isLocked ? 'rgba(244,63,94,0.1)' : 'rgba(0,245,255,0.1)',
+                                    color: isLocked ? '#f43f5e' : '#00f5ff',
                                     fontSize: 10, fontWeight: 700, padding: '4px 8px',
                                     borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4
                                 }}>
-                                    <Sparkles size={10} /> AI DRIVEN
+                                    {isLocked ? <Lock size={10} /> : <Sparkles size={10} />}
+                                    {isLocked ? 'LOCKED' : 'AI DRIVEN'}
                                 </div>
 
-                                <div style={{ width: 44, height: 44, borderRadius: 12, background: `${t.color}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-                                    <Icon size={20} color={t.color} />
+                                <div style={{ width: 44, height: 44, borderRadius: 12, background: isLocked ? 'rgba(255,255,255,0.05)' : `${t.color}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                                    {isLocked ? <Lock size={20} color="#64748b" /> : <Icon size={20} color={t.color} />}
                                 </div>
-                                <h3 style={{ fontSize: 17, fontWeight: 600, color: '#fff', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <h3 style={{ fontSize: 17, fontWeight: 600, color: isLocked ? '#64748b' : '#fff', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
                                     {t.label}
                                 </h3>
-                                <p style={{ fontSize: 14, color: '#94a3b8', lineHeight: 1.5 }}>{t.desc}</p>
+                                <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.5 }}>
+                                    {isLocked ? 'Unlock by analyzing your resume' : t.desc}
+                                </p>
 
                                 <div style={{ marginTop: 16 }}>
-                                    <p style={{ fontSize: 13, color: t.color, fontWeight: 600, margin: 0 }}>Start {t.id === 'mcq' ? 'Quiz' : 'AI Interview'} →</p>
+                                    {!isLocked && <p style={{ fontSize: 13, color: t.color, fontWeight: 600, margin: 0 }}>Start {t.id === 'mcq' ? 'Quiz' : 'AI Interview'} →</p>}
+                                    {isLocked && <p style={{ fontSize: 12, color: '#f43f5e', fontWeight: 600, margin: 0 }}>Resume Analysis Required</p>}
                                 </div>
                             </motion.div>
                         );
                     })}
                 </div>
+
+                {/* AI Recommended Learning Section */}
+                {(user?.personalVideos?.length > 0 || user?.personalProjects?.length > 0) ? (
+                    <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.2 }}
+                        style={{
+                            marginTop: 40, padding: 24, borderRadius: 20,
+                            background: 'rgba(10, 20, 40, 0.9)',
+                            backdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(0, 245, 255, 0.15)',
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+                        }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(0,245,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Sparkles size={18} color="#00f5ff" />
+                            </div>
+                            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#fff', margin: 0 }}>AI Recommended Learning</h3>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                            {/* Videos */}
+                            <div>
+                                <h4 style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Sparkles size={14} color="#00f5ff" /> Recommended Videos
+                                </h4>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {(user.personalVideos || []).map(vid => (
+                                        <a key={vid.id} href={vid.url} target="_blank" rel="noopener noreferrer"
+                                            style={{ display: 'flex', gap: 12, padding: 12, borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', textDecoration: 'none' }}>
+                                            <img
+                                                src={vid.thumbnail}
+                                                alt={vid.title}
+                                                onError={(e) => {
+                                                    e.target.src = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=200&h=112&fit=crop';
+                                                    e.target.onerror = null;
+                                                }}
+                                                style={{ width: 80, height: 45, borderRadius: 6, objectFit: 'cover' }}
+                                            />
+                                            <div>
+                                                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 2 }}>{vid.title}</div>
+                                                <div style={{ fontSize: 11, color: '#64748b' }}>{vid.channel}</div>
+                                            </div>
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Projects */}
+                            <div>
+                                <h4 style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Sparkles size={14} color="#6366f1" /> Mini Projects
+                                </h4>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {(user.personalProjects || []).map(proj => {
+                                        const doneCount = proj.steps.filter(s => s.done).length;
+                                        const progress = (doneCount / proj.steps.length) * 100;
+                                        return (
+                                            <div key={proj.id}
+                                                onClick={() => setActiveProject(proj)}
+                                                style={{ padding: 16, borderRadius: 12, background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.1)', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                                                onMouseOut={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+                                            >
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                                    <div style={{ fontSize: 14, fontWeight: 700, color: '#818cf8' }}>{proj.title}</div>
+                                                    <div style={{ fontSize: 10, color: '#818cf8', fontWeight: 600 }}>{Math.round(progress)}%</div>
+                                                </div>
+                                                <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden', marginBottom: 12 }}>
+                                                    <div style={{ width: `${progress}%`, height: '100%', background: '#6366f1' }} />
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                    {proj.steps.slice(0, 2).map((step, idx) => {
+                                                        const title = typeof step === 'string' ? step : step.title;
+                                                        const isDone = typeof step === 'string' ? false : step.done;
+                                                        return (
+                                                            <div key={idx} style={{ fontSize: 11, color: isDone ? '#475569' : '#94a3b8', display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                                {isDone ? <CheckCircle size={10} color="#10b981" /> : <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1px solid currentColor' }} />}
+                                                                <span style={{ textDecoration: isDone ? 'line-through' : 'none' }}>{title}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {proj.steps.length > 2 && <div style={{ fontSize: 10, color: '#6366f1', marginTop: 4 }}>+ {proj.steps.length - 2} more steps. Tap to start →</div>}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                ) : (
+                    <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.2 }}
+                        style={{ marginTop: 40, padding: 32, textAlign: 'center', borderRadius: 20, background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                        <div style={{ color: '#00f5ff', marginBottom: 16 }}><Sparkles size={32} /></div>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Unlock AI Recommendations</h3>
+                        <p style={{ fontSize: 14, color: '#64748b', maxWidth: 400, margin: '0 auto 24px' }}>
+                            Upload your resume for analysis to get personalized YouTube videos and step-by-step mini projects here!
+                        </p>
+                        <Link to="/dashboard/resume" className="btn-primary" style={{ padding: '10px 24px', textDecoration: 'none', fontSize: 14 }}>Go to Resume Analyzer</Link>
+                    </motion.div>
+                )}
+
+                {/* Project Interaction Modal */}
+                <AnimatePresence>
+                    {activeProject && (
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            style={{
+                                position: 'fixed', inset: 0, zIndex: 200,
+                                background: 'rgba(5, 10, 20, 0.9)', backdropFilter: 'blur(16px)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+                            }}
+                        >
+                            <motion.div
+                                initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30 }}
+                                className="dash-card"
+                                style={{
+                                    maxWidth: 700, width: '100%', padding: '32px',
+                                    position: 'relative', border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    maxHeight: '85vh', overflowY: 'auto'
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+                                    <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Sparkles size={24} color="#6366f1" />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', marginBottom: 4 }}>PROJECT IMPLEMENTATION</div>
+                                        <h3 style={{ fontSize: 22, fontWeight: 700, color: '#fff', margin: 0 }}>{activeProject.title}</h3>
+                                    </div>
+                                    <button onClick={() => setActiveProject(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 24 }}>&times;</button>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                    {activeProject.steps.map((step, idx) => (
+                                        <div key={idx} style={{
+                                            padding: '20px', borderRadius: 16,
+                                            background: step.done ? 'rgba(16,185,129,0.03)' : 'rgba(255,255,255,0.02)',
+                                            border: `1px solid ${step.done ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.05)'}`,
+                                            position: 'relative'
+                                        }}>
+                                            <div style={{ display: 'flex', gap: 16 }}>
+                                                <div style={{
+                                                    width: 24, height: 24, borderRadius: '50%',
+                                                    background: step.done ? '#10b981' : 'rgba(255,255,255,0.05)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: 12, fontWeight: 700, color: step.done ? '#fff' : '#64748b',
+                                                    marginTop: 2
+                                                }}>
+                                                    {step.done ? <CheckCircle size={14} /> : idx + 1}
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontSize: 16, fontWeight: 600, color: (typeof step === 'object' && step.done) ? '#64748b' : '#fff', marginBottom: 8, textDecoration: (typeof step === 'object' && step.done) ? 'line-through' : 'none' }}>
+                                                        {typeof step === 'string' ? step : (step.title || "Project Milestone")}
+                                                    </div>
+                                                    <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6, marginBottom: 16 }}>
+                                                        {typeof step === 'string' ? "Follow this step to complete the project objective." : (step.guide || "Complete this phase of the project to move forward.")}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => toggleProjectStep(activeProject.id, idx)}
+                                                        className={(typeof step === 'object' && step.done) ? "btn-secondary" : "btn-primary"}
+                                                        style={{
+                                                            padding: '6px 16px', fontSize: 12,
+                                                            background: (typeof step === 'object' && step.done) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981, #059669)',
+                                                            borderColor: (typeof step === 'object' && step.done) ? 'rgba(255,255,255,0.1)' : 'transparent'
+                                                        }}
+                                                    >
+                                                        {(typeof step === 'object' && step.done) ? 'Completed' : 'Mark as Done'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div style={{ marginTop: 32, padding: 20, background: 'rgba(99, 102, 241, 0.05)', borderRadius: 12, border: '1px dashed rgba(99, 102, 241, 0.2)', textAlign: 'center' }}>
+                                    <p style={{ fontSize: 14, color: '#818cf8', margin: 0 }}>
+                                        Complete all steps to earn <Zap size={13} style={{ display: 'inline' }} /> 100 XP total!
+                                    </p>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {isGenerating && (
                     <motion.div

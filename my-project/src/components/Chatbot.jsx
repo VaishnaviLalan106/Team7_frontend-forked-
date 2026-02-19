@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Bot, User, Minus } from 'lucide-react';
+import { aiService } from '../services/aiService';
 
 export default function Chatbot() {
     const [isOpen, setIsOpen] = useState(false);
@@ -19,7 +20,7 @@ export default function Chatbot() {
         scrollToBottom();
     }, [messages, isTyping]);
 
-    const handleSend = () => {
+    const handleSend = async () => {
         if (!input.trim()) return;
 
         const userMsg = { id: messages.length + 1, text: input, sender: 'user' };
@@ -27,21 +28,16 @@ export default function Chatbot() {
         setInput('');
         setIsTyping(true);
 
-        // Mock AI response
-        setTimeout(() => {
-            const botResponse = getMockResponse(input);
+        try {
+            // Get AI response
+            const botResponse = await aiService.getChatbotResponse(messages, input);
             setMessages(prev => [...prev, { id: prev.length + 1, text: botResponse, sender: 'bot' }]);
+        } catch (error) {
+            console.error("Chatbot error:", error);
+            setMessages(prev => [...prev, { id: prev.length + 1, text: "I'm having trouble connecting right now. Please try again later!", sender: 'bot' }]);
+        } finally {
             setIsTyping(false);
-        }, 1500);
-    };
-
-    const getMockResponse = (text) => {
-        const t = text.toLowerCase();
-        if (t.includes('roadmap')) return "You can unlock your personalized roadmap by analyzing your resume in the Resume Analyzer tab!";
-        if (t.includes('badge') || t.includes('achievement')) return "Badges are earned as you complete tasks like your first login, maintaining streaks, or acing mock tests.";
-        if (t.includes('xp')) return "You earn XP by completing mock tests and finishing roadmap topics. Level up to become a 'Rising Star'!";
-        if (t.includes('hello') || t.includes('hi')) return "Hello! I'm here to help you navigate PrepNova. What's on your mind?";
-        return "That's a great question! I'm currently in beta, but I can help you with understanding your dashboard, roadmaps, and mock tests.";
+        }
     };
 
     return (
@@ -87,7 +83,7 @@ export default function Chatbot() {
                         </div>
 
                         {/* Messages */}
-                        <div style={{ flex: 1, padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div style={{ flex: 1, padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }} className="chatbot-messages">
                             {messages.map(msg => (
                                 <div key={msg.id} style={{
                                     alignSelf: msg.sender === 'bot' ? 'flex-start' : 'flex-end',
@@ -97,46 +93,69 @@ export default function Chatbot() {
                                     gap: 4
                                 }}>
                                     <div style={{
-                                        padding: '10px 14px',
-                                        borderRadius: msg.sender === 'bot' ? '0 16px 16px 16px' : '16px 16px 0 16px',
-                                        background: msg.sender === 'bot' ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #00f5ff, #6366f1)',
+                                        padding: '12px 16px',
+                                        borderRadius: msg.sender === 'bot' ? '4px 16px 16px 16px' : '16px 16px 4px 16px',
+                                        background: msg.sender === 'bot' ? 'rgba(255,255,255,0.04)' : 'linear-gradient(135deg, #00f5ff, #6366f1)',
                                         color: msg.sender === 'bot' ? '#cbd5e1' : '#fff',
                                         fontSize: 13,
-                                        lineHeight: 1.5,
-                                        border: msg.sender === 'bot' ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                                        lineHeight: 1.6,
+                                        border: msg.sender === 'bot' ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                                        boxShadow: msg.sender === 'bot' ? 'none' : '0 4px 12px rgba(0,245,255,0.15)',
                                     }}>
                                         {msg.text}
                                     </div>
-                                    <div style={{ fontSize: 10, color: '#475569', alignSelf: msg.sender === 'bot' ? 'flex-start' : 'flex-end' }}>
-                                        {msg.sender === 'bot' ? 'AI Assistant' : 'You'}
+                                    <div style={{ fontSize: 10, color: '#475569', alignSelf: msg.sender === 'bot' ? 'flex-start' : 'flex-end', padding: '0 4px' }}>
+                                        {msg.sender === 'bot' ? 'PrepNova AI' : 'You'}
                                     </div>
                                 </div>
                             ))}
                             {isTyping && (
-                                <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 4, padding: '12px 16px', borderRadius: '0 16px 16px 16px', background: 'rgba(255,255,255,0.03)' }}>
-                                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1 }} style={{ width: 6, height: 6, borderRadius: '50%', background: '#64748b' }} />
-                                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} style={{ width: 6, height: 6, borderRadius: '50%', background: '#64748b' }} />
-                                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} style={{ width: 6, height: 6, borderRadius: '50%', background: '#64748b' }} />
+                                <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 4, padding: '12px 16px', borderRadius: '4px 16px 16px 16px', background: 'rgba(255,255,255,0.03)' }}>
+                                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1 }} style={{ width: 6, height: 6, borderRadius: '50%', background: '#00f5ff' }} />
+                                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} style={{ width: 6, height: 6, borderRadius: '50%', background: '#00f5ff' }} />
+                                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} style={{ width: 6, height: 6, borderRadius: '50%', background: '#00f5ff' }} />
                                 </div>
                             )}
                             <div ref={messagesEndRef} />
                         </div>
 
+                        {/* Quick Actions */}
+                        <div style={{ padding: '0 20px 12px', display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
+                            {[
+                                { label: 'Analyze Resume', icon: '📄' },
+                                { label: 'My Roadmap', icon: '🗺️' },
+                                { label: 'Start Mock Test', icon: '⚡' },
+                                { label: 'Skill Gaps', icon: '🎯' }
+                            ].map((action, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => { setInput(action.label); }}
+                                    style={{
+                                        whiteSpace: 'nowrap', padding: '6px 12px', borderRadius: 20,
+                                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
+                                        color: '#94a3b8', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+                                    }}
+                                >
+                                    <span>{action.icon}</span> {action.label}
+                                </button>
+                            ))}
+                        </div>
+
                         {/* Input */}
-                        <div style={{ padding: 20, borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ padding: '0 20px 20px', background: 'transparent' }}>
                             <div style={{ display: 'flex', gap: 10, position: 'relative' }}>
                                 <input
                                     type="text"
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                                    placeholder="Type your message..."
+                                    placeholder="Ask anything..."
                                     style={{
                                         flex: 1,
                                         background: 'rgba(255,255,255,0.03)',
                                         border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: 12,
-                                        padding: '12px 14px',
+                                        borderRadius: 14,
+                                        padding: '12px 16px',
                                         color: '#fff',
                                         fontSize: 13,
                                         outline: 'none',
@@ -145,9 +164,9 @@ export default function Chatbot() {
                                 <button
                                     onClick={handleSend}
                                     style={{
-                                        width: 42,
-                                        height: 42,
-                                        borderRadius: 10,
+                                        width: 44,
+                                        height: 44,
+                                        borderRadius: 12,
                                         background: 'linear-gradient(135deg, #00f5ff, #6366f1)',
                                         border: 'none',
                                         cursor: 'pointer',

@@ -5,7 +5,6 @@ import { Menu, X, Flame, Zap, Sparkles } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Chatbot from './Chatbot';
 import AnimatedBackground from './AnimatedBackground';
-import Footer from './Footer';
 import { useAuth } from '../context/AuthContext';
 
 export default function DashboardLayout() {
@@ -14,7 +13,7 @@ export default function DashboardLayout() {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     return (
-        <div style={{ minHeight: '100vh', position: 'relative', overflowX: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
             <AnimatedBackground />
             <Sidebar
                 isOpen={sidebarOpen}
@@ -26,9 +25,11 @@ export default function DashboardLayout() {
             {/* Main content — offset on desktop */}
             <div
                 style={{
-                    position: 'relative', zIndex: 10, flex: 1, display: 'flex', flexDirection: 'column',
+                    position: 'relative', zIndex: 10, flex: 1,
+                    display: 'flex', flexDirection: 'column',
                     marginLeft: sidebarCollapsed ? 80 : 240,
                     transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    minHeight: '100vh', // Ensure it fills the height properly
                 }}
                 className="dash-content-wrapper"
             >
@@ -46,16 +47,24 @@ export default function DashboardLayout() {
 
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                    width: 32, height: 32, borderRadius: '50%',
-                                    background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    border: '1.5px solid rgba(255,255,255,0.1)',
-                                    fontSize: 13, fontWeight: 700, color: '#fff',
-                                    textTransform: 'uppercase'
-                                }}>
-                                    {user?.name?.charAt(0) || 'U'}
-                                </div>
+                                {user?.avatar ? (
+                                    <img
+                                        src={user.avatar}
+                                        alt="Avatar"
+                                        style={{ width: 32, height: 32, borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.1)' }}
+                                    />
+                                ) : (
+                                    <div style={{
+                                        width: 32, height: 32, borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        border: '1.5px solid rgba(255,255,255,0.1)',
+                                        fontSize: 13, fontWeight: 700, color: '#fff',
+                                        textTransform: 'uppercase'
+                                    }}>
+                                        {user?.name?.charAt(0) || 'U'}
+                                    </div>
+                                )}
                                 <p style={{ fontSize: 15, color: '#94a3b8', margin: 0 }}>
                                     Welcome, <span style={{ color: '#fff', fontWeight: 600 }}>{user?.name?.split(' ')[0] || 'User'}</span>
                                 </p>
@@ -77,14 +86,11 @@ export default function DashboardLayout() {
                 </header>
 
                 {/* Page content */}
-                <main style={{ padding: '16px 16px 40px', flex: 1 }}>
+                <main style={{ padding: '16px 16px', flex: 1 }} className="page-bottom-buffer">
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                         <Outlet />
                     </motion.div>
                 </main>
-
-                {/* Footer at bottom */}
-                <Footer />
             </div>
             <Chatbot />
         </div>

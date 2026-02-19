@@ -22,14 +22,22 @@ export default function Profile() {
             {/* User Info Card */}
             <motion.div className="dash-card" initial="hidden" animate="visible" variants={fadeUp}
                 style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
-                <div style={{
-                    width: 64, height: 64, borderRadius: '50%',
-                    background: 'linear-gradient(135deg, rgba(0,245,255,0.15), rgba(99,102,241,0.15))',
-                    border: '2px solid rgba(0,245,255,0.2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                    <User size={28} color="#00f5ff" />
-                </div>
+                {user?.avatar ? (
+                    <img
+                        src={user.avatar}
+                        alt="Avatar"
+                        style={{ width: 64, height: 64, borderRadius: '50%', border: '2px solid rgba(0,245,255,0.2)' }}
+                    />
+                ) : (
+                    <div style={{
+                        width: 64, height: 64, borderRadius: '50%',
+                        background: 'linear-gradient(135deg, rgba(0,245,255,0.15), rgba(99,102,241,0.15))',
+                        border: '2px solid rgba(0,245,255,0.2)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                        <User size={28} color="#00f5ff" />
+                    </div>
+                )}
                 <div>
                     <h3 style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{user?.name || 'User'}</h3>
                     <p style={{ fontSize: 14, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -2,43 +2,43 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Upload, FileText, Search, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
-import { skillAnalysis } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
+import { aiService } from '../services/aiService';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } };
 
 export default function ResumeAnalyzer() {
-    const [Analyzed, setAnalyzed] = useState(false);
+    const { setPersonalData, user } = useAuth();
+    const [Analyzed, setAnalyzed] = useState(user?.hasAnalyzed || false);
     const [resumeFile, setResumeFile] = useState(null);
     const [jdText, setJdText] = useState('');
-    const { setPersonalData, user } = useAuth();
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState(user?.personalSkillGaps || null);
 
-    const handleAnalyze = () => {
+    const handleAnalyze = async () => {
         if (!resumeFile && !jdText) return;
 
         setIsAnalyzing(true);
 
-        // Simulate Deep AI Analysis
-        setTimeout(() => {
-            setIsAnalyzing(false);
+        try {
+            // Real AI Analysis — Generate ALL related data at once
+            const result = await aiService.analyzeResume(resumeFile?.name || "Sample Resume", jdText);
+            const roadmap = await aiService.generateRoadmap(result.missing);
+            const videos = await aiService.getRecommendedVideos(result.missing);
+            const projects = await aiService.generateMiniProjects(result.missing);
+
+            // Persist to Context (which saves to localStorage)
+            setAnalysisResult(result);
+            setPersonalData(roadmap, result, videos, projects);
             setAnalyzed(true);
 
-            // Generate Unique Personalization Data based on JD/Context
-            const generatedRoadmap = [
-                { title: `Mastering ${jdText.slice(0, 15) || 'Modern Tech'}`, level: 'Advanced', modules: ['Advanced Patterns', 'Performance Tuning', 'Cloud Deployment'] },
-                { title: 'Project Implementation', level: 'Practical', modules: ['Full-stack Integration', 'Security Best Practices'] },
-                { title: 'Interview Readiness', level: 'Expert', modules: ['System Design Prep', 'Mock Culture Fit'] }
-            ];
-
-            const generatedSkillGaps = {
-                matched: ['JavaScript', 'React', 'Git', 'Problem Solving'],
-                missing: [jdText.slice(0, 10).trim() || 'System Design', 'Docker', 'AWS', 'GraphQL'],
-                priority: ['Cloud Architecture', 'Unit Testing']
-            };
-
-            setPersonalData(generatedRoadmap, generatedSkillGaps);
-        }, 2000);
+            // Note: No page refresh needed as state and context update instantly
+        } catch (error) {
+            console.error("AI Analysis failed:", error);
+            alert("AI Analysis failed. Please try again.");
+        } finally {
+            setIsAnalyzing(false);
+        }
     };
 
     return (
@@ -101,7 +101,7 @@ export default function ResumeAnalyzer() {
                                     border: '3px solid rgba(0,245,255,0.4)',
                                     boxShadow: '0 0 20px rgba(0,245,255,0.15)',
                                 }}>
-                                    <span style={{ fontSize: 30, fontWeight: 800, color: '#00f5ff' }}>82%</span>
+                                    <span style={{ fontSize: 30, fontWeight: 800, color: '#00f5ff' }}>{analysisResult?.score || 82}%</span>
                                 </div>
                                 <div>
                                     <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 4 }}>Overall Match Score</p>
@@ -119,7 +119,7 @@ export default function ResumeAnalyzer() {
                                         <CheckCircle2 size={15} /> Matched Skills
                                     </h4>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {skillAnalysis.matched.map((s, i) => (
+                                        {(analysisResult?.matched || []).map((s, i) => (
                                             <span key={i} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'rgba(16,185,129,0.08)', color: '#10b981', border: '1px solid rgba(16,185,129,0.15)' }}>{s}</span>
                                         ))}
                                     </div>
@@ -130,7 +130,7 @@ export default function ResumeAnalyzer() {
                                         <XCircle size={15} /> Missing Skills
                                     </h4>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {skillAnalysis.missing.map((s, i) => (
+                                        {(analysisResult?.missing || []).map((s, i) => (
                                             <span key={i} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'rgba(244,63,94,0.08)', color: '#f43f5e', border: '1px solid rgba(244,63,94,0.15)' }}>{s}</span>
                                         ))}
                                     </div>
@@ -141,7 +141,7 @@ export default function ResumeAnalyzer() {
                                         <AlertTriangle size={15} /> Priority Skills
                                     </h4>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {skillAnalysis.priority.map((s, i) => (
+                                        {(analysisResult?.priority || []).map((s, i) => (
                                             <span key={i} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'rgba(245,158,11,0.08)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.15)' }}>{s}</span>
                                         ))}
                                     </div>
@@ -153,7 +153,7 @@ export default function ResumeAnalyzer() {
                         <div className="dash-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
                             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 24, textAlign: 'center' }}>Skill Performance</h3>
                             <ResponsiveContainer width="100%" height={300}>
-                                <RadarChart data={skillAnalysis.radarData}>
+                                <RadarChart data={analysisResult?.radarData || []}>
                                     <PolarGrid stroke="rgba(0,245,255,0.1)" />
                                     <PolarAngleAxis dataKey="skill" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 500 }} />
                                     <Radar dataKey="level" stroke="#00f5ff" fill="#3b82f6" fillOpacity={0.2} strokeWidth={3} />

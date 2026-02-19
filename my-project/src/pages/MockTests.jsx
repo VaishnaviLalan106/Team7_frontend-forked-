@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     ClipboardList, Brain, Building2, Settings, Timer,
     ChevronRight, X, CheckCircle2, Star,
-    MessageSquare
+    MessageSquare, Youtube, Code, Sparkles
 } from 'lucide-react';
 import {
     RadarChart, Radar, PolarGrid, PolarAngleAxis,
@@ -11,6 +11,7 @@ import {
     CartesianGrid, Tooltip
 } from 'recharts';
 import useStore from '../store/useStore';
+import { useAuth } from '../context/AuthContext';
 
 const fadeUp = {
     initial: { opacity: 0, y: 20 },
@@ -124,6 +125,7 @@ function TestCard({ test, onClick, index }) {
 
 function ResultsModal({ test, onClose }) {
     const { triggerXpPopup } = useStore();
+    const { user } = useAuth();
     const overallScore = 72;
 
     return (
@@ -261,6 +263,61 @@ function ResultsModal({ test, onClose }) {
                             </p>
                         </div>
                     </div>
+
+                    {/* AI Recommended Learning */}
+                    {(user?.personalVideos?.length > 0 || user?.personalProjects?.length > 0) && (
+                        <div className="glass-card-static p-5 mb-6 border-l-4 border-cyan-400">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Sparkles size={18} className="text-cyan-400" />
+                                <h4 className="text-sm font-bold text-white uppercase tracking-wider">AI Recommended Learning</h4>
+                            </div>
+
+                            {/* Videos */}
+                            {user?.personalVideos?.length > 0 && (
+                                <div className="mb-6">
+                                    <h5 className="text-xs font-semibold text-slate-400 mb-3 flex items-center gap-2">
+                                        <Youtube size={14} /> Recommended Videos
+                                    </h5>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {user.personalVideos.map(vid => (
+                                            <a key={vid.id} href={vid.url} target="_blank" rel="noopener noreferrer"
+                                                className="flex items-center gap-3 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5 no-underline">
+                                                <img src={vid.thumbnail} alt={vid.title} className="w-20 h-12 rounded object-cover" />
+                                                <div>
+                                                    <div className="text-xs font-semibold text-white line-clamp-1">{vid.title}</div>
+                                                    <div className="text-[10px] text-slate-500">{vid.channel}</div>
+                                                </div>
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Projects */}
+                            {user?.personalProjects?.length > 0 && (
+                                <div>
+                                    <h5 className="text-xs font-semibold text-slate-400 mb-3 flex items-center gap-2">
+                                        <Code size={14} /> Step-by-Step Mini Projects
+                                    </h5>
+                                    <div className="space-y-3">
+                                        {user.personalProjects.map(proj => (
+                                            <div key={proj.id} className="p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/10">
+                                                <div className="text-xs font-bold text-indigo-400 mb-2">{proj.title}</div>
+                                                <div className="space-y-1">
+                                                    {proj.steps.map((step, idx) => (
+                                                        <div key={idx} className="text-[11px] text-slate-300 flex gap-2">
+                                                            <span className="text-indigo-500 font-bold">{idx + 1}.</span>
+                                                            {step}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex gap-3">
