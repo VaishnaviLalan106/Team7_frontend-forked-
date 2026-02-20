@@ -4,7 +4,8 @@ import {
     GitBranch, Lock, CheckCircle2, ChevronRight, X,
     BookOpen, Video, ClipboardCheck, Code2
 } from 'lucide-react';
-import useStore from '../store/useStore';
+import { useAuth } from '../context/AuthContext';
+import { roadmaps as mockRoadmaps } from '../data/mockData';
 
 const fadeUp = {
     initial: { opacity: 0, y: 20 },
@@ -43,8 +44,8 @@ function SkillNode({ skill, depth = 0, colorIndex = 0, onSelect }) {
                         if (skill.unlocked) onSelect(skill);
                     }}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all cursor-pointer border-none text-left mb-1 ${skill.unlocked
-                            ? 'hover:bg-white/5 bg-transparent'
-                            : 'opacity-40 cursor-not-allowed bg-transparent'
+                        ? 'hover:bg-white/5 bg-transparent'
+                        : 'opacity-40 cursor-not-allowed bg-transparent'
                         }`}
                 >
                     {/* Node dot */}
@@ -135,7 +136,7 @@ function SkillNode({ skill, depth = 0, colorIndex = 0, onSelect }) {
 }
 
 function SkillDetail({ skill, onClose }) {
-    const { triggerXpPopup } = useStore();
+    const { addXp } = useAuth();
 
     const tabs = [
         { id: 'theory', label: 'Theory Notes', icon: BookOpen },
@@ -184,8 +185,8 @@ function SkillDetail({ skill, onClose }) {
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all cursor-pointer bg-transparent border-x-0 border-t-0 ${activeTab === tab.id
-                                        ? 'text-coral border-coral'
-                                        : 'text-slate-500 border-transparent hover:text-white'
+                                    ? 'text-coral border-coral'
+                                    : 'text-slate-500 border-transparent hover:text-white'
                                     }`}
                             >
                                 <TabIcon size={14} />
@@ -200,32 +201,38 @@ function SkillDetail({ skill, onClose }) {
                     {activeTab === 'theory' && (
                         <div className="space-y-3">
                             <p className="text-sm text-slate-300 leading-relaxed">
-                                Master the fundamentals of <strong className="text-white">{skill.name}</strong>.
-                                Understanding core concepts is essential for interview success.
+                                {skill.notes || `Master the fundamentals of ${skill.name}. Understanding core concepts is essential for interview success.`}
                             </p>
-                            <div className="glass-card-static p-4 text-sm text-slate-400">
-                                <p className="font-medium text-slate-300 mb-2">Key Concepts:</p>
-                                <ul className="list-disc list-inside space-y-1">
-                                    <li>Core principles and best practices</li>
-                                    <li>Common patterns and anti-patterns</li>
-                                    <li>Performance considerations</li>
-                                    <li>Real-world applications</li>
-                                </ul>
-                            </div>
+                            {!skill.notes && (
+                                <div className="glass-card-static p-4 text-sm text-slate-400">
+                                    <p className="font-medium text-slate-300 mb-2">Key Concepts:</p>
+                                    <ul className="list-disc list-inside space-y-1">
+                                        <li>Core principles and best practices</li>
+                                        <li>Common patterns and anti-patterns</li>
+                                        <li>Performance considerations</li>
+                                        <li>Real-world applications</li>
+                                    </ul>
+                                </div>
+                            )}
                         </div>
                     )}
                     {activeTab === 'video' && (
                         <div className="space-y-3">
-                            {['Introduction & Overview', 'Deep Dive Workshop', 'Interview Prep'].map((title, i) => (
-                                <div key={i} className="glass-card-static p-4 flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-xl bg-lavender/10 flex items-center justify-center shrink-0">
-                                        <Video size={20} className="text-lavender" />
+                            {(skill.resources && skill.resources.length > 0 ? skill.resources : [
+                                { title: 'Introduction & Overview', url: '#' },
+                                { title: 'Deep Dive Workshop', url: '#' }
+                            ]).map((res, i) => (
+                                <a key={i} href={res.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                                    <div className="glass-card-static p-4 flex items-center gap-3 hover:bg-white/5 transition-colors">
+                                        <div className="w-12 h-12 rounded-xl bg-lavender/10 flex items-center justify-center shrink-0">
+                                            <Video size={20} className="text-lavender" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-medium text-white">{res.skill || res.title || 'Learning Resource'}</p>
+                                            <p className="text-xs text-slate-500">Video Lesson</p>
+                                        </div>
                                     </div>
-                                    <div className="flex-1">
-                                        <p className="text-sm font-medium text-white">{title}</p>
-                                        <p className="text-xs text-slate-500">{15 + i * 10} min</p>
-                                    </div>
-                                </div>
+                                </a>
                             ))}
                         </div>
                     )}
@@ -236,7 +243,7 @@ function SkillDetail({ skill, onClose }) {
                                 Test your knowledge of {skill.name}
                             </p>
                             <button
-                                onClick={() => triggerXpPopup(25)}
+                                onClick={() => addXp(25)}
                                 className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald to-emerald-light text-white font-semibold text-sm cursor-pointer border-none"
                             >
                                 Start Mini Test
@@ -250,7 +257,7 @@ function SkillDetail({ skill, onClose }) {
                                 Hands-on practice challenge for {skill.name}
                             </p>
                             <button
-                                onClick={() => triggerXpPopup(40)}
+                                onClick={() => addXp(40)}
                                 className="px-6 py-3 rounded-xl bg-gradient-to-r from-coral to-coral-light text-white font-semibold text-sm cursor-pointer border-none"
                             >
                                 Start Practice
@@ -264,8 +271,30 @@ function SkillDetail({ skill, onClose }) {
 }
 
 export default function SkillTree() {
-    const { skills } = useStore();
+    const { user } = useAuth();
     const [selectedSkill, setSelectedSkill] = useState(null);
+
+    // Map backend roadmap to skill tree format
+    // Fallback to mock roadmaps if user has no personal roadmap yet
+    const roadmap = (user?.personalRoadmap && user.personalRoadmap.length > 0)
+        ? user.personalRoadmap
+        : mockRoadmaps;
+
+    const transformedSkills = roadmap.map((rm, i) => ({
+        id: rm.id || `rm-${i}`,
+        name: rm.title,
+        mastery: rm.progress || 0,
+        unlocked: i === 0 || roadmap[i - 1].progress === 100,
+        children: (rm.modules || []).map((m, j) => ({
+            id: `m-${i}-${j}`,
+            name: typeof m === 'string' ? m : m.title,
+            mastery: user?.completedSkills?.includes(typeof m === 'string' ? m : m.title) ? 100 : 0,
+            unlocked: i === 0 || roadmap[i - 1].progress === 100,
+            notes: typeof m === 'object' ? m.notes : '',
+            resources: typeof m === 'object' ? m.resources : [],
+            children: []
+        }))
+    }));
 
     return (
         <div className="max-w-4xl mx-auto px-4 md:px-6">
@@ -274,19 +303,25 @@ export default function SkillTree() {
                     <span className="text-gradient-mixed">Skill Roadmap</span>
                 </h1>
                 <p className="text-slate-400 text-sm">
-                    Unlock skills, complete quizzes, and build your mastery tree.
+                    Unlock skills, complete modules, and build your mastery tree.
                 </p>
             </motion.div>
 
             <div className="glass-card p-4 md:p-6">
-                {skills.map((skill, i) => (
-                    <SkillNode
-                        key={skill.id}
-                        skill={skill}
-                        colorIndex={i}
-                        onSelect={setSelectedSkill}
-                    />
-                ))}
+                {transformedSkills.length > 0 ? (
+                    transformedSkills.map((skill, i) => (
+                        <SkillNode
+                            key={skill.id}
+                            skill={skill}
+                            colorIndex={i}
+                            onSelect={setSelectedSkill}
+                        />
+                    ))
+                ) : (
+                    <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                        <p style={{ color: '#64748b', fontSize: 15 }}>No roadmap generated yet. Analyze your resume to begin!</p>
+                    </div>
+                )}
             </div>
 
             <AnimatePresence>

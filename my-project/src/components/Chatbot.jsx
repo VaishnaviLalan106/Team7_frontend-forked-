@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Send, Bot, User, Minus } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, User, Minus, Mic, Square, Volume2 } from 'lucide-react';
 import { aiService } from '../services/aiService';
+import { useAuth } from '../context/AuthContext';
 
 export default function Chatbot() {
     const [isOpen, setIsOpen] = useState(false);
@@ -10,6 +11,11 @@ export default function Chatbot() {
         { id: 1, text: "Hi! I'm your PrepNova AI assistant. How can I help you today?", sender: 'bot' }
     ]);
     const [isTyping, setIsTyping] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const { user } = useAuth();
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const audioPlayerRef = useRef(new Audio());
     const messagesEndRef = useRef(null);
 
     const scrollToBottom = () => {
@@ -20,21 +26,116 @@ export default function Chatbot() {
         scrollToBottom();
     }, [messages, isTyping]);
 
-    const handleSend = async () => {
-        if (!input.trim()) return;
+    const handleSend = async (customInput = null) => {
+        const textToSend = customInput || input;
+        if (!textToSend.trim()) return;
 
-        const userMsg = { id: messages.length + 1, text: input, sender: 'user' };
+        const userMsg = { id: messages.length + 1, text: textToSend, sender: 'user' };
         setMessages(prev => [...prev, userMsg]);
         setInput('');
         setIsTyping(true);
 
         try {
-            // Get AI response
-            const botResponse = await aiService.getChatbotResponse(messages, input);
-            setMessages(prev => [...prev, { id: prev.length + 1, text: botResponse, sender: 'bot' }]);
+            // Get AI response (returns audio/mpeg binary)
+            const response = await fetch('http://localhost:8000/voice/chat-text', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('prepnova_token')}`
+                },
+                body: JSON.stringify({
+                    message: textToSend,
+                    user_email: user?.email || "anonymous"
+                })
+            });
+
+            if (!response.ok) throw new Error("Voice chat failed");
+
+            // Extract AI text from header
+            const aiText = decodeURIComponent(response.headers.get('X-AI-Response') || "I'm here to help!");
+
+            // Handle Audio blob
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+
+            setMessages(prev => [...prev, { id: prev.length + 1, text: aiText, sender: 'bot' }]);
+
+            // Play AI voice
+            audioPlayerRef.current.src = audioUrl;
+            audioPlayerRef.current.play();
+
         } catch (error) {
             console.error("Chatbot error:", error);
             setMessages(prev => [...prev, { id: prev.length + 1, text: "I'm having trouble connecting right now. Please try again later!", sender: 'bot' }]);
+        } finally {
+            setIsTyping(false);
+        }
+    };
+
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorderRef.current = new MediaRecorder(stream);
+            audioChunksRef.current = [];
+
+            mediaRecorderRef.current.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+
+            mediaRecorderRef.current.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+                handleVoiceUpload(audioBlob);
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorderRef.current.start();
+            setIsRecording(true);
+        } catch (err) {
+            console.error("Microphone error:", err);
+            alert("Please allow microphone access to use voice chat.");
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+        }
+    };
+
+    const handleVoiceUpload = async (blob) => {
+        setIsTyping(true);
+        const formData = new FormData();
+        formData.append('audio', blob);
+        formData.append('user_email', user?.email || "anonymous");
+
+        try {
+            const response = await fetch('http://localhost:8000/voice/chat-audio', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('prepnova_token')}`
+                },
+                body: formData
+            });
+
+            if (!response.ok) throw new Error("Voice upload failed");
+
+            const userText = decodeURIComponent(response.headers.get('X-User-Text') || "...");
+            const aiText = decodeURIComponent(response.headers.get('X-AI-Response') || "...");
+
+            setMessages(prev => [
+                ...prev,
+                { id: prev.length + 1, text: userText, sender: 'user' },
+                { id: prev.length + 2, text: aiText, sender: 'bot' }
+            ]);
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            audioPlayerRef.current.src = audioUrl;
+            audioPlayerRef.current.play();
+
+        } catch (err) {
+            console.error("Voice chat error:", err);
         } finally {
             setIsTyping(false);
         }
@@ -62,11 +163,15 @@ export default function Chatbot() {
                         {/* Header */}
                         <div style={{ padding: '16px 20px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(0,245,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Bot size={18} color="#00f5ff" />
+                                <div style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', background: 'rgba(0,245,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <img
+                                        src="https://api.dicebear.com/7.x/bottts/svg?seed=PrepNovaAI&backgroundColor=00f5ff,6366f1"
+                                        alt="AI Bot"
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
                                 </div>
                                 <div>
-                                    <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>PrepNova AI</div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>PrepNova AI Coach</div>
                                     <div style={{ fontSize: 10, color: '#10b981', display: 'flex', alignItems: 'center', gap: 4 }}>
                                         <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} /> Online
                                     </div>
@@ -149,20 +254,37 @@ export default function Chatbot() {
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                                    placeholder="Ask anything..."
+                                    placeholder="Ask or Speak..."
                                     style={{
                                         flex: 1,
                                         background: 'rgba(255,255,255,0.03)',
                                         border: '1px solid rgba(255,255,255,0.1)',
                                         borderRadius: 14,
                                         padding: '12px 16px',
+                                        paddingRight: 50,
                                         color: '#fff',
                                         fontSize: 13,
                                         outline: 'none',
                                     }}
                                 />
                                 <button
-                                    onClick={handleSend}
+                                    onClick={isRecording ? stopRecording : startRecording}
+                                    style={{
+                                        position: 'absolute',
+                                        right: 64,
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        color: isRecording ? '#f43f5e' : '#94a3b8',
+                                        zIndex: 10
+                                    }}
+                                >
+                                    {isRecording ? <Square size={18} className="pulse-glow" /> : <Mic size={18} />}
+                                </button>
+                                <button
+                                    onClick={() => handleSend()}
                                     style={{
                                         width: 44,
                                         height: 44,
@@ -194,7 +316,6 @@ export default function Chatbot() {
                     height: 56,
                     borderRadius: '50%',
                     background: 'linear-gradient(135deg, #00f5ff, #6366f1)',
-                    border: 'none',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',

@@ -1,331 +1,254 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import api from '../services/api';
+import { aiService } from '../services/aiService';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(() => {
-        const saved = localStorage.getItem('prepnova_current_user');
-        if (!saved) return null;
-        try {
-            const u = JSON.parse(saved);
-            // Force First Login Badge if missing on load
-            if (u && (!u.earnedBadges || !u.earnedBadges.includes(1))) {
-                u.earnedBadges = [1, ...(u.earnedBadges || [])];
-                const db = JSON.parse(localStorage.getItem('prepnova_users_db') || '{}');
-                if (u.email) db[u.email] = u;
-                localStorage.setItem('prepnova_users_db', JSON.stringify(db));
-                localStorage.setItem('prepnova_current_user', JSON.stringify(u));
-            }
-            return u;
-        } catch (e) {
-            return null;
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const verifySession = useCallback(async () => {
+        const token = localStorage.getItem('prepnova_token');
+        if (!token) {
+            setLoading(false);
+            return;
         }
-    });
 
-    // Fail-safe: ensure badge 1 is ALWAYS present and sync Job Readiness status
-    useEffect(() => {
-        if (user) {
-            let updates = {};
+        try {
+            // 1. Get User Profile
+            const profileRes = await api.get('/auth/me');
 
-            // 1. Ensure First Login Badge
-            if (!user.earnedBadges || !user.earnedBadges.includes(1)) {
-                updates.earnedBadges = [1, ...(user.earnedBadges || [])];
+            // 2. Get Comprehensive Dashboard Data (XP, Skills, Progress)
+            const dashRes = await api.get('/dashboard/');
+            const d = dashRes.data;
+
+            // 3. Get Roadmap and Projects
+            let personalRoadmap = [];
+            let personalProjects = [];
+            let personalVideos = [];
+            try {
+                const roadmapRes = await api.get('/roadmap/');
+                personalRoadmap = aiService.transformRoadmap(roadmapRes.data.roadmap);
+                personalProjects = aiService.transformProjects(roadmapRes.data.mini_projects, d.project_progress);
+                personalVideos = aiService.extractVideos(roadmapRes.data.roadmap);
+            } catch (err) {
+                console.warn("Could not fetch roadmap, might not be generated yet.");
             }
 
-            // 2. Sync isJobReady based on current roadmap state
-            if (user.personalRoadmap && user.personalRoadmap.length > 0) {
-                const allDone = user.personalRoadmap.every(rm =>
-                    (rm.topics || rm.modules || []).length > 0 &&
-                    (rm.topics || rm.modules || []).every(t => t.done)
-                );
-                if (user.isJobReady !== allDone) {
-                    updates.isJobReady = allDone;
+            // map backend structure to frontend state
+            const fullUser = {
+                ...profileRes.data,
+                xp: d.xp,
+                level: d.level,
+                xpToNext: d.xp_to_next,
+                streak: d.streak,
+                earnedBadges: d.earned_badges || [],
+                dailyXp: d.daily_xp || {},
+                personalSkillGaps: {
+                    score: d.match_percentage || 0,
+                    matched: d.matched_skills || [],
+                    missing: d.missing_skills || [],
+                    priority: d.missing_skills?.slice(0, 3) || [],
+                    radarData: aiService.calculateRadarData(d.match_percentage || 0)
+                },
+                personalRoadmap,
+                personalProjects,
+                personalVideos,
+                completedSkills: d.completed_skills || [],
+                totalProgress: d.total_progress_percentage || 0,
+                projectProgress: d.project_progress || [],
+                testHistory: d.recent_test_scores || [],
+                testStats: (d.recent_test_scores || []).reduce((acc, t) => {
+                    const type = t.test_type?.toLowerCase() || 'mcq';
+                    if (!acc[type] || t.score > acc[type]) {
+                        acc[type] = t.score;
+                    }
+                    return acc;
+                }, { mcq: 0, hr: 0, coding: 0 }),
+                hasAnalyzed: d.match_percentage !== null && d.match_percentage !== undefined,
+                isJobReady: d.total_progress_percentage >= 100,
+                // Add default "Cool Avatar" logic
+                avatar: profileRes.data.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${profileRes.data.name}&backgroundColor=00f5ff,6366f1`
+            };
+
+            setUser(fullUser);
+            localStorage.setItem('prepnova_current_user', JSON.stringify(fullUser));
+
+            // Award First Login Badge if missing
+            if (!fullUser.earnedBadges.includes(1)) {
+                try {
+                    await api.post('/gamification/badge', { badge_id: 1 });
+                    // Refresh user data after awarding badge
+                    const refreshResponse = await api.get('/auth/me');
+                    const refreshedData = refreshResponse.data;
+                    const refreshedUser = {
+                        ...fullUser,
+                        earnedBadges: JSON.parse(refreshedData.earned_badges || '[]')
+                    };
+                    setUser(refreshedUser);
+                    localStorage.setItem('prepnova_current_user', JSON.stringify(refreshedUser));
+                } catch (err) {
+                    console.error("Failed to award first login badge:", err);
                 }
             }
-
-            if (Object.keys(updates).length > 0) {
-                setUser(prev => {
-                    const updated = { ...prev, ...updates };
-                    saveUserToDb(updated);
-                    return updated;
-                });
-            }
+        } catch (error) {
+            console.error("Session verification failed:", error);
+            setUser(null);
+            localStorage.removeItem('prepnova_token');
+            localStorage.removeItem('prepnova_current_user');
+        } finally {
+            setLoading(false);
         }
-    }, [user?.personalRoadmap]); // Re-run if roadmap changes or user logs in
+    }, []);
 
-    const saveUserToDb = (userData) => {
-        const db = JSON.parse(localStorage.getItem('prepnova_users_db') || '{}');
-        db[userData.email] = userData;
-        localStorage.setItem('prepnova_users_db', JSON.stringify(db));
-        localStorage.setItem('prepnova_current_user', JSON.stringify(userData));
+    // Initial session check
+    useEffect(() => {
+        verifySession();
+    }, [verifySession]);
+
+    const login = async (email, password) => {
+        try {
+            const response = await api.post('/auth/login', { email, password });
+
+            localStorage.setItem('prepnova_token', response.data.access_token);
+            await verifySession();
+            return { success: true };
+        } catch (error) {
+            console.error("Login failed:", error);
+            if (error instanceof TypeError && error.message === 'Failed to fetch') {
+                return { success: false, error: "Server is unreachable. Please ensure the backend is running." };
+            }
+            const detail = error.response?.data?.detail;
+            const msg = typeof detail === 'object' ? JSON.stringify(detail) : (detail || "Login failed. Please check your credentials.");
+            return { success: false, error: msg };
+        }
     };
 
-    const login = (email, password) => {
-        const db = JSON.parse(localStorage.getItem('prepnova_users_db') || '{}');
-        let userData = db[email];
-
-        if (!userData) {
-            const mockName = email.split('@')[0].replace('.', ' ').replace(/\d+/g, '').trim();
-            const name = mockName.charAt(0).toUpperCase() + mockName.slice(1) || 'Explorer';
-            userData = {
-                name,
-                email,
-                level: 1,
-                xp: 0,
-                xpToNext: 500,
-                rank: 'Beginner',
-                streak: 0,
-                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
-                hasAnalyzed: false,
-                earnedBadges: [1],
-                personalRoadmap: null,
-                personalSkillGaps: null,
-                personalVideos: [],
-                personalProjects: [],
-                testStats: { mcq: 0, hr: 0, coding: 0 },
-                dailyXp: {},
-                testHistory: [],
-            };
-        } else {
-            // Force badge for existing users
-            if (!userData.earnedBadges) userData.earnedBadges = [];
-            if (!userData.earnedBadges.includes(1)) {
-                userData.earnedBadges = [1, ...userData.earnedBadges];
+    const signup = async (name, email, password) => {
+        try {
+            await api.post('/auth/signup', { name, email, password });
+            return await login(email, password);
+        } catch (error) {
+            console.error("Signup failed:", error);
+            if (error instanceof TypeError && error.message === 'Failed to fetch') {
+                return { success: false, error: "Server is unreachable. Please ensure the backend is running." };
             }
+            const detail = error.response?.data?.detail;
+            const msg = typeof detail === 'object' ? JSON.stringify(detail) : (detail || "Signup failed");
+            return { success: false, error: msg };
         }
-
-        setUser(userData);
-        saveUserToDb(userData);
-        return true;
-    };
-
-    const signup = (name, email, password) => {
-        const userData = {
-            name,
-            email,
-            level: 1,
-            xp: 0,
-            xpToNext: 500,
-            rank: 'Beginner',
-            streak: 0,
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
-            hasAnalyzed: false,
-            earnedBadges: [1], // Re-enabled First Login badge
-            personalRoadmap: null,
-            personalSkillGaps: null,
-            personalVideos: [],
-            personalProjects: [],
-            testStats: { mcq: 0, hr: 0, coding: 0 },
-            dailyXp: {},
-            testHistory: [],
-        };
-        setUser(userData);
-        saveUserToDb(userData);
-        return true;
     };
 
     const logout = () => {
         setUser(null);
+        localStorage.removeItem('prepnova_token');
         localStorage.removeItem('prepnova_current_user');
     };
 
-    const setHasAnalyzed = (status) => {
-        setUser(prev => {
-            if (!prev) return prev;
-            const updated = { ...prev, hasAnalyzed: status };
-            saveUserToDb(updated);
-            return updated;
-        });
+    const refreshUser = async () => {
+        await verifySession();
     };
 
-    const setPersonalData = (roadmap, skillGaps, videos = [], projects = []) => {
+    const giveBadge = async (badgeId) => {
+        try {
+            await api.post('/gamification/badge', { badge_id: badgeId });
+            await verifySession();
+        } catch (error) {
+            console.error("Failed to award badge:", error);
+        }
+    };
+
+    const toggleTopic = async (roadmapId, topicTitle) => {
+        if (!user) return;
+        const isDone = user.completedSkills.includes(topicTitle);
+        const newCompletedSkills = isDone
+            ? user.completedSkills.filter(s => s !== topicTitle)
+            : [...user.completedSkills, topicTitle];
+
+        // 1. Optimistic UI Update
+        const previousUser = { ...user };
+        setUser(prev => ({
+            ...prev,
+            completedSkills: newCompletedSkills,
+            // Simple approximation of progress for instant feedback
+            totalProgress: prev.personalRoadmap ? Math.round((newCompletedSkills.length / prev.personalRoadmap.reduce((acc, w) => acc + (w.topics?.length || 0), 0)) * 100) : prev.totalProgress
+        }));
+
+        try {
+            await api.request('/progress/update', {
+                method: 'PATCH',
+                body: JSON.stringify({ completed_skills: newCompletedSkills })
+            });
+            // 2. Background Refresh (don't await this if we want it to feel instant)
+            verifySession();
+        } catch (error) {
+            console.error("Failed to update progress:", error);
+            setUser(previousUser); // Rollback on error
+        }
+    };
+
+    const toggleProjectStep = async (projectId, stepIndex) => {
+        if (!user) return;
+
+        const projIdStr = String(projectId);
+        const project = user.projectProgress?.find(p => String(p.project_id) === projIdStr);
+        const currentSteps = project?.completed_steps || [];
+
+        const newSteps = currentSteps.includes(stepIndex)
+            ? currentSteps.filter(s => s !== stepIndex)
+            : [...currentSteps, stepIndex];
+
+        try {
+            await api.post('/gamification/project/step', {
+                project_id: projIdStr,
+                completed_steps: newSteps
+            });
+            await verifySession();
+        } catch (error) {
+            console.error("Failed to update project progress:", error);
+        }
+    };
+
+    const addXp = async (amount) => {
+        try {
+            await aiService.awardXp(amount);
+            await verifySession();
+            return { success: true };
+        } catch (error) {
+            console.error("Add XP failed:", error);
+            return { success: false };
+        }
+    };
+
+    const setPersonalData = (roadmap, skillGaps, videos, projects) => {
         setUser(prev => {
-            if (!prev) return prev;
             const updated = {
                 ...prev,
                 personalRoadmap: roadmap,
                 personalSkillGaps: skillGaps,
-                personalVideos: videos,
                 personalProjects: projects,
                 hasAnalyzed: true
             };
-            saveUserToDb(updated);
-            return updated;
-        });
-    };
-
-    const giveBadge = (badgeId) => {
-        setUser(prev => {
-            if (!prev || (prev.earnedBadges && prev.earnedBadges.includes(badgeId))) return prev;
-            const updated = { ...prev, earnedBadges: [...(prev.earnedBadges || []), badgeId] };
-            saveUserToDb(updated);
-            return updated;
-        });
-    };
-
-    const addXp = (amount) => {
-        setUser(prev => {
-            if (!prev) return prev;
-            const today = new Date().toISOString().split('T')[0];
-            const newXp = (prev.xp || 0) + amount;
-            const leveledUp = newXp >= prev.xpToNext;
-
-            // Track daily activity
-            const updatedDailyXp = { ...(prev.dailyXp || {}) };
-            updatedDailyXp[today] = (updatedDailyXp[today] || 0) + amount;
-
-            const updated = {
-                ...prev,
-                xp: leveledUp ? newXp - prev.xpToNext : newXp,
-                level: leveledUp ? prev.level + 1 : prev.level,
-                xpToNext: leveledUp ? prev.xpToNext + 500 : prev.xpToNext,
-                dailyXp: updatedDailyXp,
-                streak: (prev.dailyXp?.[today]) ? prev.streak : (prev.streak + 1) // Simple streak increment on first activity of day
-            };
-            saveUserToDb(updated);
-            return updated;
-        });
-    };
-
-    const toggleTopic = (roadmapId, topicTitle) => {
-        setUser(prev => {
-            if (!prev || !prev.personalRoadmap) return prev;
-            let xpToGain = 0;
-            const updatedRoadmap = prev.personalRoadmap.map(rm => {
-                if (rm.id === roadmapId || rm.title === roadmapId) {
-                    const updatedTopics = (rm.topics || rm.modules || []).map(t => {
-                        const title = typeof t === 'string' ? t : t.title;
-                        const isDone = typeof t === 'string' ? false : (t.done || false);
-                        if (title === topicTitle) {
-                            const newDone = !isDone;
-                            if (newDone) xpToGain = 50;
-                            return { title, done: newDone };
-                        }
-                        return typeof t === 'string' ? { title, done: false } : t;
-                    });
-                    const doneCount = updatedTopics.filter(t => t.done).length;
-                    const progress = Math.round((doneCount / updatedTopics.length) * 100);
-                    return { ...rm, topics: updatedTopics, progress };
-                }
-                return rm;
-            });
-
-            // Final check for "Job Readiness" (all roadmap topics done)
-            const allRoadmapsDone = updatedRoadmap.every(rm => (rm.topics || rm.modules || []).every(t => t.done));
-
-            // Apply XP if earned
-            if (xpToGain > 0) {
-                const today = new Date().toISOString().split('T')[0];
-                const newXp = (prev.xp || 0) + xpToGain;
-                const leveledUp = newXp >= (prev.xpToNext || 500);
-                const updatedDailyXp = { ...(prev.dailyXp || {}) };
-                updatedDailyXp[today] = (updatedDailyXp[today] || 0) + xpToGain;
-
-                const updated = {
-                    ...prev,
-                    personalRoadmap: updatedRoadmap,
-                    isJobReady: allRoadmapsDone,
-                    xp: leveledUp ? newXp - prev.xpToNext : newXp,
-                    level: leveledUp ? prev.level + 1 : prev.level,
-                    xpToNext: leveledUp ? prev.xpToNext + 500 : prev.xpToNext,
-                    dailyXp: updatedDailyXp,
-                    streak: (prev.dailyXp?.[today]) ? prev.streak : (prev.streak + 1)
-                };
-                saveUserToDb(updated);
-                return updated;
-            }
-
-            const updated = { ...prev, personalRoadmap: updatedRoadmap, isJobReady: allRoadmapsDone };
-            saveUserToDb(updated);
-            return updated;
-        });
-    };
-
-    const recordTestResult = (type, score) => {
-        setUser(prev => {
-            if (!prev) return prev;
-            const today = new Date().toISOString().split('T')[0];
-            const newStats = { ...(prev.testStats || {}), [type]: Math.max(prev.testStats?.[type] || 0, score) };
-            let updatedBadges = [...(prev.earnedBadges || [])];
-
-            // Badge logic
-            if (score === 100 && !updatedBadges.includes(6)) updatedBadges.push(6);
-            if (score >= 90 && !updatedBadges.includes(3)) updatedBadges.push(3);
-            const isTripleThreat = newStats.mcq >= 70 && newStats.hr >= 70 && newStats.coding >= 70;
-            if (isTripleThreat && !updatedBadges.includes(9)) updatedBadges.push(9);
-            const avg = ((newStats.mcq || 0) + (newStats.hr || 0) + (newStats.coding || 0)) / 3;
-            if (avg >= 90 && !updatedBadges.includes(8)) updatedBadges.push(8);
-
-            const updated = {
-                ...prev,
-                testStats: newStats,
-                earnedBadges: updatedBadges,
-                testHistory: [...(prev.testHistory || []), { date: today, score, type }]
-            };
-            saveUserToDb(updated);
-            return updated;
-        });
-    };
-
-    const toggleProjectStep = (projectId, stepIndex) => {
-        setUser(prev => {
-            if (!prev || !prev.personalProjects) return prev;
-            let xpToGain = 0;
-            const updatedProjects = prev.personalProjects.map(proj => {
-                if (proj.id === projectId) {
-                    const updatedSteps = proj.steps.map((step, idx) => {
-                        if (idx === stepIndex) {
-                            const title = typeof step === 'string' ? step : step.title;
-                            const isDone = typeof step === 'string' ? false : (step.done || false);
-
-                            const newDone = !isDone;
-                            if (newDone) xpToGain = 20; // 20 XP per project step
-
-                            // If it was a string, convert to proper object. 
-                            // If it was an object, preserve guide and title.
-                            return {
-                                title,
-                                done: newDone,
-                                guide: typeof step === 'string'
-                                    ? "Follow this step to complete the project objective."
-                                    : (step.guide || "Follow this step to complete the project objective.")
-                            };
-                        }
-                        return step;
-                    });
-                    return { ...proj, steps: updatedSteps };
-                }
-                return proj;
-            });
-
-            if (xpToGain > 0) {
-                const today = new Date().toISOString().split('T')[0];
-                const newXp = (prev.xp || 0) + xpToGain;
-                const leveledUp = newXp >= (prev.xpToNext || 500);
-                const updatedDailyXp = { ...(prev.dailyXp || {}) };
-                updatedDailyXp[today] = (updatedDailyXp[today] || 0) + xpToGain;
-
-                const updated = {
-                    ...prev,
-                    personalProjects: updatedProjects,
-                    xp: leveledUp ? newXp - prev.xpToNext : newXp,
-                    level: leveledUp ? prev.level + 1 : prev.level,
-                    xpToNext: leveledUp ? prev.xpToNext + 500 : prev.xpToNext,
-                    dailyXp: updatedDailyXp,
-                    streak: (prev.dailyXp?.[today]) ? prev.streak : (prev.streak + 1)
-                };
-                saveUserToDb(updated);
-                return updated;
-            }
-
-            const updated = { ...prev, personalProjects: updatedProjects };
-            saveUserToDb(updated);
+            localStorage.setItem('prepnova_current_user', JSON.stringify(updated));
             return updated;
         });
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, signup, logout, addXp, setHasAnalyzed, giveBadge, recordTestResult, setPersonalData, toggleTopic, toggleProjectStep }}>
+        <AuthContext.Provider value={{
+            user,
+            loading,
+            login,
+            signup,
+            logout,
+            refreshUser,
+            giveBadge,
+            toggleProjectStep,
+            addXp,
+            setPersonalData,
+            toggleTopic
+        }}>
             {children}
         </AuthContext.Provider>
     );

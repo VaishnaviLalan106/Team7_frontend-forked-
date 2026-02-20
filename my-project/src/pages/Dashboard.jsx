@@ -5,13 +5,6 @@ import { useAuth } from '../context/AuthContext';
 import { weeklyProgress, skillRadarData, testScores, focusAreas } from '../data/mockData';
 import ProgressCircle from '../components/ProgressCircle';
 
-const stats = [
-    { label: 'JD Match', value: '82%', icon: Target, color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-    { label: 'Skills Done', value: '62%', icon: TrendingUp, color: '#3b82f6', bg: 'rgba(59,130,246,0.08)' },
-    { label: 'Total XP', value: '2,840', icon: Zap, color: '#00f5ff', bg: 'rgba(0,245,255,0.08)' },
-    { label: 'Day Streak', value: '7 🔥', icon: Flame, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
-];
-
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } };
 
 export default function Dashboard() {
@@ -161,7 +154,7 @@ export default function Dashboard() {
             </div>
 
             {/* XP Progress Bar */}
-            <motion.div className="dash-card" initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.7 }}>
+            <motion.div className="dash-card" initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.7 }} style={{ marginBottom: 24 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 500 }}>Level {user?.level || 1} Progress</span>
                     <span style={{ fontSize: 13, color: '#64748b', fontWeight: 600 }}>{user?.xp?.toLocaleString() || 0} / {user?.xpToNext || 500} XP</span>

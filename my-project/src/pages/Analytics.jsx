@@ -4,7 +4,6 @@ import {
     LineChart, Line, AreaChart, Area, BarChart, Bar, RadarChart, Radar,
     PolarGrid, PolarAngleAxis, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid
 } from 'recharts';
-import { analyticsData } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } };
@@ -52,11 +51,17 @@ export default function Analytics() {
         return { day, hours: (hasTodayActivity && isTargetDay) ? (xp / 100) : 0 };
     });
 
-    // 4. Performance Radar - Only show if active
-    const performanceData = analyticsData.performance.map(p => ({
-        ...p,
-        score: hasTodayActivity ? p.score : 0
-    }));
+    // 4. Performance Radar - Use real test scores if available
+    const performanceData = user?.testHistory?.length > 0
+        ? user.testHistory.slice(0, 6).map(t => ({ area: t.skill_name, score: t.score }))
+        : [
+            { area: 'Technical', score: hasAnyActivity ? 85 : 0 },
+            { area: 'Logic', score: hasAnyActivity ? 70 : 0 },
+            { area: 'Speed', score: hasAnyActivity ? 90 : 0 },
+            { area: 'Consistency', score: hasAnyActivity ? 65 : 0 },
+            { area: 'Behavioral', score: hasAnyActivity ? 75 : 0 },
+            { area: 'Architecture', score: hasAnyActivity ? 60 : 0 }
+        ];
 
     const displayAnalyticsData = {
         skillGrowth: skillGrowthData,

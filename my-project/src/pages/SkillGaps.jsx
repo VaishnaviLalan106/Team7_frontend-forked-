@@ -34,7 +34,7 @@ export default function SkillGaps() {
             icon: TrendingUp,
             color: '#10b981',
             data: hasAnalyzed
-                ? (personalGaps?.matched?.map(s => ({ name: s, level: 90 })) || skillGaps.strong)
+                ? (personalGaps?.matched?.map(s => ({ name: s, level: 90 })) || [])
                 : []
         },
         {
@@ -42,7 +42,7 @@ export default function SkillGaps() {
             icon: AlertTriangle,
             color: '#f59e0b',
             data: hasAnalyzed
-                ? (personalGaps?.moderate?.map(s => ({ name: s, level: 65 })) || skillGaps.moderate || [])
+                ? (personalGaps?.moderate?.map(s => ({ name: s, level: 65 })) || [])
                 : []
         },
         {
@@ -50,7 +50,7 @@ export default function SkillGaps() {
             icon: XCircle,
             color: '#f43f5e',
             data: hasAnalyzed
-                ? (personalGaps?.missing?.map(s => ({ name: s, level: 30 })) || skillGaps.missing)
+                ? (personalGaps?.missing?.map(s => ({ name: s, level: 30 })) || [])
                 : []
         },
     ];

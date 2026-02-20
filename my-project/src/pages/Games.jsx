@@ -4,7 +4,7 @@ import {
     Swords, Zap, Bug, UserCheck, Timer, Star, Trophy,
     X, Play, ChevronRight
 } from 'lucide-react';
-import useStore from '../store/useStore';
+import { useAuth } from '../context/AuthContext';
 
 const fadeUp = {
     initial: { opacity: 0, y: 20 },
@@ -134,7 +134,7 @@ function GameModal({ game, onClose }) {
     const [answered, setAnswered] = useState(false);
     const [selectedOpt, setSelectedOpt] = useState(null);
     const [finished, setFinished] = useState(false);
-    const { triggerXpPopup } = useStore();
+    const { addXp } = useAuth();
 
     const questions = game.questions;
 
@@ -150,7 +150,7 @@ function GameModal({ game, onClose }) {
     const handleNext = () => {
         if (currentQ + 1 >= questions.length) {
             setFinished(true);
-            triggerXpPopup(game.xpReward);
+            addXp(game.xpReward);
         } else {
             setCurrentQ(currentQ + 1);
             setAnswered(false);

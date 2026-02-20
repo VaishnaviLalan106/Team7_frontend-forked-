@@ -15,6 +15,7 @@ import Roadmap from './pages/Roadmap';
 import MockTest from './pages/MockTest';
 import Analytics from './pages/Analytics';
 import Profile from './pages/Profile';
+import SkillTree from './pages/SkillTree';
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();

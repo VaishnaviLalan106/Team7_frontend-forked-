@@ -48,11 +48,13 @@ export default function DashboardLayout() {
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                 {user?.avatar ? (
-                                    <img
-                                        src={user.avatar}
-                                        alt="Avatar"
-                                        style={{ width: 32, height: 32, borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.1)' }}
-                                    />
+                                    <div style={{ width: 32, height: 32, borderRadius: '50%', overflow: 'hidden', border: '1.5px solid rgba(0,245,255,0.3)' }}>
+                                        <img
+                                            src={user.avatar}
+                                            alt="Avatar"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
+                                    </div>
                                 ) : (
                                     <div style={{
                                         width: 32, height: 32, borderRadius: '50%',

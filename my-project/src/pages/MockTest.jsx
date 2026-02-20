@@ -5,6 +5,7 @@ import { ClipboardList, Clock, CheckCircle2, XCircle, BarChart3, ArrowLeft, Lock
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, Cell, CartesianGrid } from 'recharts';
 import { mockQuestions } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
+import { aiService } from '../services/aiService';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } };
 
@@ -18,7 +19,8 @@ export default function MockTest() {
     const [testType, setTestType] = useState(null);
     const [activeQuestions, setActiveQuestions] = useState([]);
     const [activeProject, setActiveProject] = useState(null);
-    const { addXp, user, recordTestResult, toggleProjectStep } = useAuth();
+    const [testId, setTestId] = useState(null);
+    const { user, refreshUser, toggleProjectStep } = useAuth();
     const hasAnalyzed = user?.hasAnalyzed;
 
     const testTypes = [
@@ -43,50 +45,88 @@ export default function MockTest() {
         return shuffled;
     };
 
-    const startTest = (type) => {
+    const startTest = async (type) => {
         setTestType(type);
         setIsGenerating(true);
 
-        // Filter and Shuffle Questions
-        const pool = mockQuestions.filter(q => q.type === type);
-        const count = Math.min(pool.length, 5);
-        const shuffled = shuffleArray(pool).slice(0, count);
-        setActiveQuestions(shuffled);
+        try {
+            // Generate test from backend (defaults to first missing skill for now)
+            const skillToTest = user?.personalSkillGaps?.missing?.[0] || "General Tech";
+            const test = await aiService.generateTest(skillToTest, type);
 
-        // Simulate AI tailoring
-        setTimeout(() => {
+            setActiveQuestions(test.questions.map(q => ({
+                id: q.id,
+                question: q.question, // Backend uses "question" in QuestionOut
+                options: q.options || [],
+                ideal: q.ideal_answer_concept || "" // for HR/Coding
+            })));
+
+            setTestId(test.test_id);
+            setMode('test');
+            setCurrentQ(0);
+            setAnswers({});
+            setTimeLeft(600);
+        } catch (error) {
+            console.error("Test generation failed:", error);
+            alert("Failed to generate test. Please try again.");
+        } finally {
             setIsGenerating(false);
-            if (shuffled.length > 0) {
-                setMode('test');
-                setCurrentQ(0);
-                setAnswers({});
-                setTimeLeft(600);
-            } else {
-                alert("No questions found for this category yet. We're adding more soon!");
-            }
-        }, 1500);
+        }
     };
 
-    const handleSubmit = () => {
-        if (activeQuestions.length === 0) return;
+    const handleSubmit = async () => {
+        if (isGenerating || activeQuestions.length === 0) return;
 
-        let correct = 0;
-        const breakdown = [];
-        activeQuestions.forEach((q, i) => {
-            const isCorrect = answers[i] === q.answer;
-            if (isCorrect) correct++;
-            breakdown.push({ q: `Q${i + 1}`, score: isCorrect ? 1 : 0 });
-        });
-        const score = Math.round((correct / activeQuestions.length) * 100);
+        setIsGenerating(true);
+        try {
+            const skillToTest = user?.personalSkillGaps?.missing?.[0] || "General Tech";
+            let result;
 
-        // Record results for badges and history
-        if (recordTestResult) {
-            recordTestResult(testType, score);
+            if (testType === 'mcq' || testType === 'hr' || testType === 'coding') {
+                const submission = activeQuestions.map((q, i) => ({
+                    question_id: q.id,
+                    selected_answer: activeQuestions[i].options[answers[i]] || ""
+                }));
+                result = await aiService.submitTest(testId, skillToTest, submission);
+
+                setResults({
+                    score: result.score,
+                    correct: result.correct_count,
+                    total: result.total_questions,
+                    breakdown: result.results.map((res, i) => ({
+                        q: `Q${i + 1}`,
+                        score: res.is_correct ? 1 : 0
+                    }))
+                });
+            } else {
+                // HR or Coding
+                const submission = activeQuestions.map((q, i) => ({
+                    question_id: q.id,
+                    answer: answers[i] || ""
+                }));
+                result = await aiService.gradeTest(testId, skillToTest, testType, submission);
+
+                setResults({
+                    score: result.total_score,
+                    correct: result.results.filter(r => r.score >= 70).length,
+                    total: result.results.length,
+                    breakdown: result.results.map((res, i) => ({
+                        q: `Q${i + 1}`,
+                        score: res.score >= 70 ? 1 : 0,
+                        feedback: res.feedback
+                    })),
+                    details: result.results
+                });
+            }
+
+            await refreshUser();
+            setMode('results');
+        } catch (error) {
+            console.error("Test submission failed:", error);
+            alert("Failed to submit test results.");
+        } finally {
+            setIsGenerating(false);
         }
-
-        if (score >= 70) addXp(50);
-        setResults({ score, correct, total: activeQuestions.length, breakdown });
-        setMode('results');
     };
 
     const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
@@ -245,85 +285,88 @@ export default function MockTest() {
 
                 {/* Project Interaction Modal */}
                 <AnimatePresence>
-                    {activeProject && (
-                        <motion.div
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            style={{
-                                position: 'fixed', inset: 0, zIndex: 200,
-                                background: 'rgba(5, 10, 20, 0.9)', backdropFilter: 'blur(16px)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-                            }}
-                        >
+                    {activeProject && (() => {
+                        const currentProj = (user?.personalProjects || []).find(p => String(p.id) === String(activeProject.id)) || activeProject;
+                        return (
                             <motion.div
-                                initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30 }}
-                                className="dash-card"
+                                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                                 style={{
-                                    maxWidth: 700, width: '100%', padding: '32px',
-                                    position: 'relative', border: '1px solid rgba(99, 102, 241, 0.3)',
-                                    maxHeight: '85vh', overflowY: 'auto'
+                                    position: 'fixed', inset: 0, zIndex: 200,
+                                    background: 'rgba(5, 10, 20, 0.9)', backdropFilter: 'blur(16px)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
                                 }}
                             >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
-                                    <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Sparkles size={24} color="#6366f1" />
+                                <motion.div
+                                    initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30 }}
+                                    className="dash-card"
+                                    style={{
+                                        maxWidth: 700, width: '100%', padding: '32px',
+                                        position: 'relative', border: '1px solid rgba(99, 102, 241, 0.3)',
+                                        maxHeight: '85vh', overflowY: 'auto'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+                                        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Sparkles size={24} color="#6366f1" />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', marginBottom: 4 }}>PROJECT IMPLEMENTATION</div>
+                                            <h3 style={{ fontSize: 22, fontWeight: 700, color: '#fff', margin: 0 }}>{currentProj.title}</h3>
+                                        </div>
+                                        <button onClick={() => setActiveProject(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 24 }}>&times;</button>
                                     </div>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', marginBottom: 4 }}>PROJECT IMPLEMENTATION</div>
-                                        <h3 style={{ fontSize: 22, fontWeight: 700, color: '#fff', margin: 0 }}>{activeProject.title}</h3>
-                                    </div>
-                                    <button onClick={() => setActiveProject(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 24 }}>&times;</button>
-                                </div>
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                                    {activeProject.steps.map((step, idx) => (
-                                        <div key={idx} style={{
-                                            padding: '20px', borderRadius: 16,
-                                            background: step.done ? 'rgba(16,185,129,0.03)' : 'rgba(255,255,255,0.02)',
-                                            border: `1px solid ${step.done ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.05)'}`,
-                                            position: 'relative'
-                                        }}>
-                                            <div style={{ display: 'flex', gap: 16 }}>
-                                                <div style={{
-                                                    width: 24, height: 24, borderRadius: '50%',
-                                                    background: step.done ? '#10b981' : 'rgba(255,255,255,0.05)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    fontSize: 12, fontWeight: 700, color: step.done ? '#fff' : '#64748b',
-                                                    marginTop: 2
-                                                }}>
-                                                    {step.done ? <CheckCircle size={14} /> : idx + 1}
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontSize: 16, fontWeight: 600, color: (typeof step === 'object' && step.done) ? '#64748b' : '#fff', marginBottom: 8, textDecoration: (typeof step === 'object' && step.done) ? 'line-through' : 'none' }}>
-                                                        {typeof step === 'string' ? step : (step.title || "Project Milestone")}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                        {currentProj.steps.map((step, idx) => (
+                                            <div key={idx} style={{
+                                                padding: '20px', borderRadius: 16,
+                                                background: step.done ? 'rgba(16,185,129,0.03)' : 'rgba(255,255,255,0.02)',
+                                                border: `1px solid ${step.done ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.05)'}`,
+                                                position: 'relative'
+                                            }}>
+                                                <div style={{ display: 'flex', gap: 16 }}>
+                                                    <div style={{
+                                                        width: 24, height: 24, borderRadius: '50%',
+                                                        background: step.done ? '#10b981' : 'rgba(255,255,255,0.05)',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        fontSize: 12, fontWeight: 700, color: step.done ? '#fff' : '#64748b',
+                                                        marginTop: 2
+                                                    }}>
+                                                        {step.done ? <CheckCircle size={14} /> : idx + 1}
                                                     </div>
-                                                    <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6, marginBottom: 16 }}>
-                                                        {typeof step === 'string' ? "Follow this step to complete the project objective." : (step.guide || "Complete this phase of the project to move forward.")}
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontSize: 16, fontWeight: 600, color: (typeof step === 'object' && step.done) ? '#64748b' : '#fff', marginBottom: 8, textDecoration: (typeof step === 'object' && step.done) ? 'line-through' : 'none' }}>
+                                                            {typeof step === 'string' ? step : (step.title || "Project Milestone")}
+                                                        </div>
+                                                        <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6, marginBottom: 16 }}>
+                                                            {typeof step === 'string' ? "Follow this step to complete the project objective." : (step.guide || "Complete this phase of the project to move forward.")}
+                                                        </div>
+                                                        <button
+                                                            onClick={() => toggleProjectStep(currentProj.id, idx)}
+                                                            className={(typeof step === 'object' && step.done) ? "btn-secondary" : "btn-primary"}
+                                                            style={{
+                                                                padding: '6px 16px', fontSize: 12,
+                                                                background: (typeof step === 'object' && step.done) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981, #059669)',
+                                                                borderColor: (typeof step === 'object' && step.done) ? 'rgba(255,255,255,0.1)' : 'transparent'
+                                                            }}
+                                                        >
+                                                            {(typeof step === 'object' && step.done) ? 'Completed' : 'Mark as Done'}
+                                                        </button>
                                                     </div>
-                                                    <button
-                                                        onClick={() => toggleProjectStep(activeProject.id, idx)}
-                                                        className={(typeof step === 'object' && step.done) ? "btn-secondary" : "btn-primary"}
-                                                        style={{
-                                                            padding: '6px 16px', fontSize: 12,
-                                                            background: (typeof step === 'object' && step.done) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981, #059669)',
-                                                            borderColor: (typeof step === 'object' && step.done) ? 'rgba(255,255,255,0.1)' : 'transparent'
-                                                        }}
-                                                    >
-                                                        {(typeof step === 'object' && step.done) ? 'Completed' : 'Mark as Done'}
-                                                    </button>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                        ))}
+                                    </div>
 
-                                <div style={{ marginTop: 32, padding: 20, background: 'rgba(99, 102, 241, 0.05)', borderRadius: 12, border: '1px dashed rgba(99, 102, 241, 0.2)', textAlign: 'center' }}>
-                                    <p style={{ fontSize: 14, color: '#818cf8', margin: 0 }}>
-                                        Complete all steps to earn <Zap size={13} style={{ display: 'inline' }} /> 100 XP total!
-                                    </p>
-                                </div>
+                                    <div style={{ marginTop: 32, padding: 20, background: 'rgba(99, 102, 241, 0.05)', borderRadius: 12, border: '1px dashed rgba(99, 102, 241, 0.2)', textAlign: 'center' }}>
+                                        <p style={{ fontSize: 14, color: '#818cf8', margin: 0 }}>
+                                            Complete all steps to earn <Zap size={13} style={{ display: 'inline' }} /> 100 XP total!
+                                        </p>
+                                    </div>
+                                </motion.div>
                             </motion.div>
-                        </motion.div>
-                    )}
+                        );
+                    })()}
                 </AnimatePresence>
 
                 {isGenerating && (
@@ -373,21 +416,40 @@ export default function MockTest() {
                 </div>
 
                 <motion.div className="dash-card" initial="hidden" animate="visible" variants={fadeUp}>
-                    <h3 style={{ fontSize: 17, fontWeight: 600, color: '#fff', marginBottom: 20, lineHeight: 1.5 }}>{q.question}</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {q.options.map((opt, i) => (
-                            <button key={i} onClick={() => setAnswers({ ...answers, [currentQ]: i })}
+                    <h3 style={{ fontSize: 17, fontWeight: 600, color: '#fff', marginBottom: 20, lineHeight: 1.5, whiteSpace: 'pre-line' }}>{q.question}</h3>
+
+                    {(testType === 'mcq' || testType === 'hr' || testType === 'coding') ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {q.options.map((opt, i) => (
+                                <button key={i} onClick={() => setAnswers({ ...answers, [currentQ]: i })}
+                                    style={{
+                                        padding: '14px 18px', borderRadius: 12, fontSize: 15, textAlign: 'left',
+                                        background: answers[currentQ] === i ? 'rgba(0,245,255,0.08)' : 'rgba(255,255,255,0.03)',
+                                        border: `1px solid ${answers[currentQ] === i ? 'rgba(0,245,255,0.25)' : 'rgba(255,255,255,0.06)'}`,
+                                        color: answers[currentQ] === i ? '#00f5ff' : '#cbd5e1',
+                                        cursor: 'pointer', transition: 'all 0.2s',
+                                    }}>
+                                    {opt}
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <textarea
+                                value={answers[currentQ] || ""}
+                                onChange={(e) => setAnswers({ ...answers, [currentQ]: e.target.value })}
+                                placeholder={testType === 'coding' ? "// Write your implementation here..." : "Type your answer using the STAR method..."}
                                 style={{
-                                    padding: '14px 18px', borderRadius: 12, fontSize: 15, textAlign: 'left',
-                                    background: answers[currentQ] === i ? 'rgba(0,245,255,0.08)' : 'rgba(255,255,255,0.03)',
-                                    border: `1px solid ${answers[currentQ] === i ? 'rgba(0,245,255,0.25)' : 'rgba(255,255,255,0.06)'}`,
-                                    color: answers[currentQ] === i ? '#00f5ff' : '#cbd5e1',
-                                    cursor: 'pointer', transition: 'all 0.2s',
-                                }}>
-                                {opt}
-                            </button>
-                        ))}
-                    </div>
+                                    width: '100%', minHeight: 240, background: 'rgba(5, 10, 20, 0.4)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)',
+                                    color: '#fff', padding: 20, fontSize: 15, lineHeight: 1.6, resize: 'vertical',
+                                    fontFamily: testType === 'coding' ? 'monospace' : 'inherit'
+                                }}
+                            />
+                            <div style={{ fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Sparkles size={12} /> AI will evaluate your answer upon submission.
+                            </div>
+                        </div>
+                    )}
                 </motion.div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24 }}>
@@ -395,7 +457,23 @@ export default function MockTest() {
                         style={{ opacity: currentQ === 0 ? 0.4 : 1, padding: '10px 20px' }}>Previous</button>
                     {currentQ < activeQuestions.length - 1
                         ? <button onClick={() => setCurrentQ(currentQ + 1)} className="btn-primary" style={{ padding: '10px 24px' }}>Next</button>
-                        : <button onClick={handleSubmit} className="btn-primary" style={{ padding: '10px 24px', background: 'linear-gradient(135deg, #10b981, #059669)' }}>Submit</button>}
+                        : <button
+                            onClick={handleSubmit}
+                            disabled={isGenerating}
+                            className="btn-primary"
+                            style={{
+                                padding: '10px 24px',
+                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                opacity: isGenerating ? 0.7 : 1,
+                                cursor: isGenerating ? 'not-allowed' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8
+                            }}
+                        >
+                            {isGenerating ? <Zap size={16} className="animate-pulse" /> : null}
+                            {isGenerating ? 'Submitting...' : 'Submit'}
+                        </button>}
                 </div>
             </div>
         );
@@ -475,6 +553,11 @@ export default function MockTest() {
                             <Tooltip
                                 cursor={{ fill: 'rgba(255,255,255,0.02)' }}
                                 contentStyle={{ background: 'rgba(10,20,40,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', color: '#fff' }}
+                                labelStyle={{ color: '#fff', fontWeight: 700, marginBottom: 4 }}
+                                formatter={(val, name, props) => {
+                                    const fb = props.payload.feedback;
+                                    return [fb ? fb : (val === 1 ? 'Correct' : 'Incorrect'), 'Status'];
+                                }}
                             />
                             <Bar dataKey="score" radius={[6, 6, 6, 6]} barSize={40}>
                                 {results.breakdown.map((entry, index) => (
@@ -485,13 +568,34 @@ export default function MockTest() {
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 24 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8' }}>
-                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }} /> Correct
+                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }} /> {testType === 'mcq' ? 'Correct' : 'Score 70%+'}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8' }}>
-                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#f43f5e' }} /> Wrong
+                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#f43f5e' }} /> {testType === 'mcq' ? 'Wrong' : 'Needs Improvement'}
                         </div>
                     </div>
                 </motion.div>
+
+                {results.details && (
+                    <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.4 }} style={{ marginTop: 24 }}>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 16 }}>Detailed AI Feedback</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {results.details.map((res, i) => (
+                                <div key={i} className="dash-card" style={{ padding: 20, borderLeft: `4px solid ${res.score >= 70 ? '#10b981' : '#f43f5e'}` }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Question {i + 1}</div>
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: res.score >= 70 ? '#10b981' : '#f43f5e' }}>{res.score}/100</div>
+                                    </div>
+                                    <div style={{ fontSize: 14, color: '#cbd5e1', marginBottom: 12, fontWeight: 600 }}>{res.question}</div>
+                                    <div style={{ padding: 12, borderRadius: 8, background: 'rgba(255,255,255,0.03)', fontSize: 13, color: '#94a3b8', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <span style={{ color: '#00f5ff', fontWeight: 700, fontSize: 11, display: 'block', marginBottom: 4 }}>💡 AI FEEDBACK</span>
+                                        {res.feedback}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
 
                 <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
                     <button onClick={() => { setMode('select'); setResults(null); }} className="btn-secondary" style={{ padding: '12px 24px' }}>Back to Tests</button>

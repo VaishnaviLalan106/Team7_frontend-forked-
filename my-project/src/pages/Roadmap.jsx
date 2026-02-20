@@ -8,6 +8,27 @@ import { aiService } from '../services/aiService';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } };
 
+const renderMarkdown = (text) => {
+    if (!text) return null;
+    const lines = text.split('\n');
+    return lines.map((line, i) => {
+        // Handle bolding
+        const parts = line.split(/(\*\*.*?\*\*)/g);
+        const formattedLine = parts.map((part, j) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+                return <strong key={j} style={{ color: '#fff', fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
+            }
+            return part;
+        });
+
+        return (
+            <p key={i} style={{ marginBottom: line.trim() === '' ? 12 : 8, minHeight: line.trim() === '' ? 4 : 'auto' }}>
+                {formattedLine}
+            </p>
+        );
+    });
+};
+
 export default function Roadmap() {
     const [expandedId, setExpandedId] = useState(null);
     const [studyTopic, setStudyTopic] = useState(null);
@@ -21,18 +42,27 @@ export default function Roadmap() {
 
     useEffect(() => {
         if (studyTopic) {
+            console.log("Study Topic Selected:", studyTopic); // Debug log
             setStudyStep(0);
             setFlippedCards({});
-            const skill = studyTopic.roadmapTitle.replace(' Mastery Path', '');
 
-            setIsLoadingNotes(true);
-            // Fetch tutorial notes
-            aiService.getTutorialContent(studyTopic.title, studyTopic.week).then(notes => {
-                setTutorialNotes(notes);
-                setIsLoadingNotes(false);
+            // Map resources to a cleaner format
+            const takeaways = studyTopic.resources?.map(r => ({
+                t: r.skill,
+                d: r.url,
+                isLink: true
+            })) || [];
+
+            setTutorialNotes({
+                intro: studyTopic.notes || `This module focuses on ${studyTopic.title}.`,
+                keyTakeaways: takeaways.length > 0 ? takeaways : [
+                    { t: 'Foundational Theory', d: 'Master the underlying principles and terminology.' },
+                    { t: 'Live Examples', d: 'Break down real-world code snippets and usage.' },
+                    { t: 'Common Pitfalls', d: 'Learn what to avoid during implementation.' }
+                ]
             });
-            // Fetch flashcards for specific topic
-            aiService.getFlashcards(skill, studyTopic.title, studyTopic.week).then(setFlashcards);
+
+            setFlashcards(studyTopic.flashcards || []);
         }
     }, [studyTopic]);
 
@@ -45,22 +75,30 @@ export default function Roadmap() {
         const id = rm.id || `personal-${idx}`;
         const topics = (rm.topics || rm.modules || []).map((t, j) => ({
             title: typeof t === 'string' ? t : t.title,
-            done: hasAnalyzed ? (t.done || false) : false
+            done: user?.completedSkills?.includes(typeof t === 'string' ? t : t.title)
         }));
+
+        const weekProgress = topics.length > 0
+            ? Math.round((topics.filter(t => t.done).length / topics.length) * 100)
+            : 0;
 
         return {
             ...rm,
             id,
-            weeks: rm.weeks || 4,
-            progress: rm.progress || 0,
+            weeks: rm.weeks || 1,
+            progress: id.startsWith('personal-') || id.startsWith('week-') || id.startsWith('rm-')
+                ? weekProgress
+                : (rm.progress || 0),
             xp: rm.xp || 500,
             topics
         };
     });
 
     const handleStudyCompletion = (roadmapId, topicTitle) => {
-        toggleTopic(roadmapId, topicTitle);
+        // Instant close for premium feel
         setStudyTopic(null);
+        // Trigger update in background
+        toggleTopic(roadmapId, topicTitle);
     };
 
     const toggleCard = (idx) => {
@@ -166,7 +204,14 @@ export default function Roadmap() {
                                                             </div>
                                                             {!isDone && isUnlocked && (
                                                                 <button
-                                                                    onClick={() => setStudyTopic({ roadmapId: rm.id, roadmapTitle: rm.title, title: topic.title, week: j + 1 })}
+                                                                    onClick={() => setStudyTopic({
+                                                                        ...rm,
+                                                                        roadmapId: rm.id,
+                                                                        roadmapTitle: rm.title,
+                                                                        title: topic.title,
+                                                                        week: j + 1,
+                                                                        flashcards: rm.flashcards
+                                                                    })}
                                                                     className="btn-primary"
                                                                     style={{ padding: '6px 16px', fontSize: 12, borderRadius: 8 }}
                                                                 >
@@ -215,27 +260,33 @@ export default function Roadmap() {
                             initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30 }}
                             className="dash-card"
                             style={{
-                                maxWidth: 700, width: '100%', padding: '0',
+                                maxWidth: 850, width: '100%', padding: '0',
                                 position: 'relative', border: '1px solid rgba(0,245,255,0.2)',
-                                overflow: 'hidden'
+                                overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column'
                             }}
                         >
                             {/* Modal Header/Tabs */}
                             <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
                                 {['Tutorial', 'Flashcards', 'Final Check'].map((name, i) => (
-                                    <div key={i} style={{
-                                        flex: 1, padding: '16px', textAlign: 'center', fontSize: 13, fontWeight: 600,
-                                        color: studyStep === i ? '#00f5ff' : '#64748b',
-                                        borderBottom: `2px solid ${studyStep === i ? '#00f5ff' : 'transparent'}`,
-                                        background: studyStep === i ? 'rgba(0,245,255,0.03)' : 'none',
-                                        transition: 'all 0.3s'
-                                    }}>
+                                    <div key={i}
+                                        onClick={() => setStudyStep(i)}
+                                        style={{
+                                            flex: 1, padding: '16px', textAlign: 'center', fontSize: 13, fontWeight: 600,
+                                            color: studyStep === i ? '#00f5ff' : '#64748b',
+                                            borderBottom: `2px solid ${studyStep === i ? '#00f5ff' : 'transparent'}`,
+                                            background: studyStep === i ? 'rgba(0,245,255,0.03)' : 'none',
+                                            transition: 'all 0.3s',
+                                            cursor: 'pointer'
+                                        }}
+                                        className="hover-tab"
+                                    >
                                         {name}
                                     </div>
                                 ))}
                             </div>
 
-                            <div style={{ padding: '32px' }}>
+                            {/* Scrollable Body */}
+                            <div style={{ padding: '32px', flex: 1, overflowY: 'auto' }} className="custom-scrollbar">
                                 <AnimatePresence mode="wait">
                                     {studyStep === 0 && (
                                         <motion.div key="step-0" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
@@ -249,7 +300,7 @@ export default function Roadmap() {
                                                 </div>
                                             </div>
 
-                                            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 16, padding: 20, marginBottom: 24, border: '1px solid rgba(255,255,255,0.05)', minHeight: 180 }}>
+                                            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 16, padding: '24px 28px', border: '1px solid rgba(255,255,255,0.05)', minHeight: 180 }}>
                                                 {isLoadingNotes ? (
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 140, gap: 12 }}>
                                                         <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}><RotateCw size={24} color="#00f5ff" /></motion.div>
@@ -257,32 +308,36 @@ export default function Roadmap() {
                                                     </div>
                                                 ) : (
                                                     <>
-                                                        <p style={{ fontSize: 15, color: '#94a3b8', lineHeight: 1.6, marginBottom: 20 }}>
-                                                            {tutorialNotes?.intro || `In this instructional tutorial, we cover the core architecture and implementation patterns of ${studyTopic.title}.`}
-                                                        </p>
-                                                        <h4 style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 12 }}>Key Study Areas:</h4>
-                                                        <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                                            {(tutorialNotes?.keyTakeaways || [
-                                                                { t: 'Foundational Theory', d: 'Master the underlying principles and terminology.' },
-                                                                { t: 'Live Examples', d: 'Break down real-world code snippets and usage.' },
-                                                                { t: 'Common Pitfalls', d: 'Learn what to avoid during implementation.' }
-                                                            ]).map((item, idx) => (
-                                                                <li key={idx} style={{ display: 'flex', gap: 12 }}>
-                                                                    <div style={{ marginTop: 4 }}><Layout size={14} color="#00f5ff" /></div>
+                                                        <div style={{ fontSize: 15, color: '#94a3b8', lineHeight: 1.7, marginBottom: 28 }}>
+                                                            {renderMarkdown(tutorialNotes?.intro)}
+                                                        </div>
+                                                        <h4 style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                            <Zap size={14} color="#00f5ff" /> Learning Resources & Takeaways:
+                                                        </h4>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+                                                            {tutorialNotes?.keyTakeaways?.map((item, idx) => (
+                                                                <div key={idx} style={{
+                                                                    display: 'flex', gap: 12, padding: 16, borderRadius: 12,
+                                                                    background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)'
+                                                                }}>
+                                                                    <div style={{ marginTop: 2 }}><Layout size={14} color="#00f5ff" /></div>
                                                                     <div>
                                                                         <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{item.t}</div>
-                                                                        <div style={{ fontSize: 13, color: '#64748b' }}>{item.d}</div>
+                                                                        {item.isLink ? (
+                                                                            <a href={item.d} target="_blank" rel="noopener noreferrer"
+                                                                                style={{ fontSize: 12, color: '#00f5ff', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                                                                                View Resource <PlayCircle size={12} />
+                                                                            </a>
+                                                                        ) : (
+                                                                            <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{item.d}</div>
+                                                                        )}
                                                                     </div>
-                                                                </li>
+                                                                </div>
                                                             ))}
-                                                        </ul>
+                                                        </div>
                                                     </>
                                                 )}
                                             </div>
-
-                                            <button onClick={() => setStudyStep(1)} className="btn-primary" style={{ width: '100%', padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                                Next: Flashcard Study <ArrowRight size={18} />
-                                            </button>
                                         </motion.div>
                                     )}
 
@@ -298,7 +353,7 @@ export default function Roadmap() {
                                                 </div>
                                             </div>
 
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24, maxHeight: 300, overflowY: 'auto', padding: 4 }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16, padding: 4 }}>
                                                 {flashcards.map((card, i) => (
                                                     <motion.div key={i}
                                                         onClick={() => toggleCard(i)}
@@ -343,43 +398,54 @@ export default function Roadmap() {
                                                     </motion.div>
                                                 ))}
                                             </div>
-
-                                            <div style={{ display: 'flex', gap: 12 }}>
-                                                <button onClick={() => setStudyStep(0)} className="btn-secondary" style={{ flex: 1, padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                                    <ArrowLeft size={18} /> Back
-                                                </button>
-                                                <button onClick={() => setStudyStep(2)} className="btn-primary" style={{ flex: 2, padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                                    Next: Complete <ArrowRight size={18} />
-                                                </button>
-                                            </div>
                                         </motion.div>
                                     )}
 
                                     {studyStep === 2 && (
                                         <motion.div key="step-2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                                            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                                                <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
-                                                    <CheckCircle2 size={32} color="#10b981" />
+                                            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                                                <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+                                                    <CheckCircle2 size={40} color="#10b981" />
                                                 </div>
-                                                <h3 style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 12 }}>Ready for Certification?</h3>
-                                                <p style={{ fontSize: 15, color: '#94a3b8', maxWidth: 400, margin: '0 auto 32px', lineHeight: 1.6 }}>
+                                                <h3 style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 12 }}>Ready for Certification?</h3>
+                                                <p style={{ fontSize: 16, color: '#94a3b8', maxWidth: 450, margin: '0 auto 32px', lineHeight: 1.6 }}>
                                                     You've completed the tutorials and flashcard drills. Mark this module as done to earn your XP and unlock the next stage.
                                                 </p>
-                                            </div>
-
-                                            <div style={{ display: 'flex', gap: 12 }}>
-                                                <button onClick={() => setStudyStep(1)} className="btn-secondary" style={{ flex: 1, padding: '14px' }}>Review Cards</button>
-                                                <button
-                                                    onClick={() => handleStudyCompletion(studyTopic.roadmapId, studyTopic.title)}
-                                                    className="btn-primary"
-                                                    style={{ flex: 2, padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'linear-gradient(135deg, #10b981, #059669)' }}
-                                                >
-                                                    <CheckCircle size={18} /> Mark Module as Complete
-                                                </button>
                                             </div>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
+                            </div>
+
+                            {/* Fixed Footer */}
+                            <div style={{ padding: '24px 32px', borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.01)' }}>
+                                {studyStep === 0 && (
+                                    <button onClick={() => setStudyStep(1)} className="btn-primary" style={{ width: '100%', padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                        Next Component: Flashcard Study <ArrowRight size={18} />
+                                    </button>
+                                )}
+                                {studyStep === 1 && (
+                                    <div style={{ display: 'flex', gap: 12 }}>
+                                        <button onClick={() => setStudyStep(0)} className="btn-secondary" style={{ flex: 1, padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                            <ArrowLeft size={18} /> Back
+                                        </button>
+                                        <button onClick={() => setStudyStep(2)} className="btn-primary" style={{ flex: 2, padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                            Final Confirmation <ArrowRight size={18} />
+                                        </button>
+                                    </div>
+                                )}
+                                {studyStep === 2 && (
+                                    <div style={{ display: 'flex', gap: 12 }}>
+                                        <button onClick={() => setStudyStep(1)} className="btn-secondary" style={{ flex: 1, padding: '14px' }}>Review Cards</button>
+                                        <button
+                                            onClick={() => handleStudyCompletion(studyTopic.roadmapId, studyTopic.title)}
+                                            className="btn-primary"
+                                            style={{ flex: 2, padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                                        >
+                                            <CheckCircle size={18} /> Mark Module as Complete
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Close Button */}

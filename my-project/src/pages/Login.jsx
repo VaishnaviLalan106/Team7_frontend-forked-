@@ -14,11 +14,18 @@ export default function Login() {
     const { login } = useAuth();
     const navigate = useNavigate();
 
-    const handleSubmit = (e) => {
+    const [error, setError] = useState('');
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
         if (email && password) {
-            login(email, password);
-            navigate('/dashboard');
+            const result = await login(email, password);
+            if (result.success) {
+                navigate('/dashboard');
+            } else {
+                setError(result.error);
+            }
         }
     };
 
@@ -44,6 +51,13 @@ export default function Login() {
 
                         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 4 }}>Welcome Back</h2>
                         <p style={{ fontSize: 13, color: '#64748b', textAlign: 'center', marginBottom: 24 }}>Sign in to continue your preparation</p>
+
+                        {error && (
+                            <div style={{ padding: 12, borderRadius: 12, fontSize: 14, color: '#f43f5e', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.15)', textAlign: 'center', marginBottom: 20 }}>
+                                {typeof error === 'string' ? error : 'An unexpected error occurred'}
+                            </div>
+                        )}
+
 
                         <form onSubmit={handleSubmit}>
                             <div style={{ marginBottom: 24 }}>

@@ -17,11 +17,21 @@ export default function Signup() {
     const { signup } = useAuth();
     const navigate = useNavigate();
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-        if (name && email && password) { signup(name, email, password); navigate('/dashboard'); }
+        if (password !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+        if (name && email && password) {
+            const result = await signup(name, email, password);
+            if (result.success) {
+                navigate('/dashboard');
+            } else {
+                setError(result.error);
+            }
+        }
     };
 
     return (
@@ -47,7 +57,11 @@ export default function Signup() {
                         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 4 }}>Create Account</h2>
                         <p style={{ fontSize: 13, color: '#64748b', textAlign: 'center', marginBottom: 24 }}>Start your AI-powered preparation journey</p>
 
-                        {error && <div style={{ padding: 12, borderRadius: 12, fontSize: 14, color: '#f43f5e', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.15)', textAlign: 'center', marginBottom: 20 }}>{error}</div>}
+                        {error && (
+                            <div style={{ padding: 12, borderRadius: 12, fontSize: 14, color: '#f43f5e', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.15)', textAlign: 'center', marginBottom: 20 }}>
+                                {typeof error === 'string' ? error : 'Signup failed. Please check your details.'}
+                            </div>
+                        )}
 
                         <form onSubmit={handleSubmit}>
                             <div style={{ marginBottom: 20 }}>

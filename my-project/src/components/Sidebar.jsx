@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard, FileText, Brain, Map, ClipboardList,
-    BarChart3, User, LogOut, Sparkles, X
+    BarChart3, User, LogOut, Sparkles, X, Swords, GitBranch
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 

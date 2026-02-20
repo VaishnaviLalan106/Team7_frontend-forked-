@@ -16,26 +16,33 @@ export default function ResumeAnalyzer() {
     const [analysisResult, setAnalysisResult] = useState(user?.personalSkillGaps || null);
 
     const handleAnalyze = async () => {
-        if (!resumeFile && !jdText) return;
+        if (!jdText.trim()) {
+            alert("Please paste a Job Description first!");
+            return;
+        }
+
+        // Optional resume warning
+        if (!resumeFile && !user?.hasAnalyzed) {
+            if (!confirm("No resume selected. If you haven't uploaded one before, the analysis might fail. Proceed anyway?")) {
+                return;
+            }
+        }
 
         setIsAnalyzing(true);
 
         try {
             // Real AI Analysis — Generate ALL related data at once
-            const result = await aiService.analyzeResume(resumeFile?.name || "Sample Resume", jdText);
-            const roadmap = await aiService.generateRoadmap(result.missing);
-            const videos = await aiService.getRecommendedVideos(result.missing);
-            const projects = await aiService.generateMiniProjects(result.missing);
+            const result = await aiService.analyzeResume(resumeFile, jdText);
+            const roadmapData = await aiService.generateRoadmap();
 
-            // Persist to Context (which saves to localStorage)
+            // Persist to Context (which saves to database/token via AuthContext updates)
             setAnalysisResult(result);
-            setPersonalData(roadmap, result, videos, projects);
+            setPersonalData(roadmapData.roadmap, result, [], roadmapData.projects);
             setAnalyzed(true);
 
-            // Note: No page refresh needed as state and context update instantly
         } catch (error) {
             console.error("AI Analysis failed:", error);
-            alert("AI Analysis failed. Please try again.");
+            alert(error.message || "AI Analysis failed. Please check your connection.");
         } finally {
             setIsAnalyzing(false);
         }
@@ -94,14 +101,14 @@ export default function ResumeAnalyzer() {
                     {/* Score + Radar Grid */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20, marginBottom: 24 }}>
                         <div className="dash-card">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28, paddingBottom: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 28, paddingBottom: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                                 <div style={{
-                                    width: 84, height: 84, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 96, height: 96, minWidth: 96, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     background: 'linear-gradient(135deg, rgba(0,245,255,0.15), rgba(16,185,129,0.15))',
                                     border: '3px solid rgba(0,245,255,0.4)',
                                     boxShadow: '0 0 20px rgba(0,245,255,0.15)',
                                 }}>
-                                    <span style={{ fontSize: 30, fontWeight: 800, color: '#00f5ff' }}>{analysisResult?.score || 82}%</span>
+                                    <span style={{ fontSize: 24, fontWeight: 800, color: '#00f5ff' }}>{analysisResult?.score ?? 0}%</span>
                                 </div>
                                 <div>
                                     <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 4 }}>Overall Match Score</p>
@@ -155,7 +162,7 @@ export default function ResumeAnalyzer() {
                             <ResponsiveContainer width="100%" height={300}>
                                 <RadarChart data={analysisResult?.radarData || []}>
                                     <PolarGrid stroke="rgba(0,245,255,0.1)" />
-                                    <PolarAngleAxis dataKey="skill" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 500 }} />
+                                    <PolarAngleAxis dataKey="skill" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} />
                                     <Radar dataKey="level" stroke="#00f5ff" fill="#3b82f6" fillOpacity={0.2} strokeWidth={3} />
                                 </RadarChart>
                             </ResponsiveContainer>
