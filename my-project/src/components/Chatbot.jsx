@@ -4,6 +4,8 @@ import { MessageSquare, X, Send, Bot, User, Minus, Mic, Square, Volume2 } from '
 import { aiService } from '../services/aiService';
 import { useAuth } from '../context/AuthContext';
 
+const BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+
 export default function Chatbot() {
     const [isOpen, setIsOpen] = useState(false);
     const [input, setInput] = useState('');
@@ -37,7 +39,7 @@ export default function Chatbot() {
 
         try {
             // Get AI response (returns audio/mpeg binary)
-            const response = await fetch('http://localhost:8000/voice/chat-text', {
+            const response = await fetch(`${BASE_URL}/voice/chat-text`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -110,7 +112,7 @@ export default function Chatbot() {
         formData.append('user_email', user?.email || "anonymous");
 
         try {
-            const response = await fetch('http://localhost:8000/voice/chat-audio', {
+            const response = await fetch(`${BASE_URL}/voice/chat-audio`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('prepnova_token')}`
