@@ -22,7 +22,7 @@ export const aiService = {
                 console.log("Step 1: (Skipped) No new resume provided, using existing one on server.");
             }
 
-            // 2. Save JD
+            // 2. Save JD — this triggers the backend AI analysis
             console.log("Step 2: Saving Job Description...");
             await api.post('/analysis/jd', {
                 company_name: "Target Company",
@@ -33,30 +33,79 @@ export const aiService = {
                 throw new Error(`JD upload failed: ${msg}`);
             });
 
-            // 3. Get Analysis
-            console.log("Step 3: Fetching Skill Gap Analysis...");
-            const response = await api.get('/analysis/skill-gap').catch(err => {
-                const detail = err.response?.data?.detail;
-                const msg = typeof detail === 'object' ? JSON.stringify(detail) : (detail || err.response?.statusText || 'Unknown error');
+            // 3. Poll for Analysis Results — backend may process asynchronously
+            console.log("Step 3: Waiting for AI analysis to complete...");
+
+            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            const MAX_RETRIES = 15;       // 15 attempts
+            const RETRY_DELAY_MS = 3000;  // 3 seconds between attempts
+            const INITIAL_DELAY_MS = 4000; // 4 second initial wait
+
+            // Give the backend time to start processing
+            await delay(INITIAL_DELAY_MS);
+
+            let data = null;
+            let lastError = null;
+
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    console.log(`📊 Polling attempt ${attempt}/${MAX_RETRIES}...`);
+                    const response = await api.get('/analysis/skill-gap');
+                    data = response.data;
+                    console.log(`📊 Attempt ${attempt} Response:`, JSON.stringify(data, null, 2));
+
+                    // Check if the backend has finished processing
+                    const hasResults = (data.matched_skills?.length > 0 || data.missing_skills?.length > 0 || data.match_percentage > 0);
+                    if (hasResults) {
+                        console.log(`✅ Analysis complete on attempt ${attempt}!`);
+                        break;
+                    }
+
+                    // If no results yet and we have more retries, wait and try again
+                    if (attempt < MAX_RETRIES) {
+                        console.log(`⏳ No results yet, retrying in ${RETRY_DELAY_MS / 1000}s...`);
+                        await delay(RETRY_DELAY_MS);
+                    }
+                } catch (err) {
+                    lastError = err;
+                    console.warn(`📊 Attempt ${attempt} failed:`, err.message || err);
+                    if (attempt < MAX_RETRIES) {
+                        await delay(RETRY_DELAY_MS);
+                    }
+                }
+            }
+
+            // If all retries failed with errors, throw
+            if (!data && lastError) {
+                const detail = lastError.response?.data?.detail;
+                const msg = typeof detail === 'object' ? JSON.stringify(detail) : (detail || 'Analysis timed out');
                 throw new Error(`Skill gap analysis failed: ${msg}`);
-            });
-            const data = response.data;
+            }
+
+            // Use whatever data we have (even if still empty after all retries)
+            data = data || {};
 
             // Map backend response to frontend format
             const matched = data.matched_skills || [];
             const missing = data.missing_skills || [];
             const score = data.match_percentage || 0;
+            console.log(`📊 FINAL: score=${score}, matched=${matched.length} skills, missing=${missing.length} skills`);
+
+            if (matched.length === 0 && missing.length === 0 && score === 0) {
+                console.warn("⚠️ Backend returned empty analysis after all retries. The AI may not have processed the resume+JD correctly.");
+            }
 
             return {
                 score: score,
-                matched: matched, // Array of strings
-                missing: missing, // Array of strings
-                priority: missing.slice(0, 3), // Top 3 as priority
+                matched: matched,
+                missing: missing,
+                moderate: [],
+                priority: missing.slice(0, 3),
                 radarData: aiService.calculateRadarData(score)
             };
         } catch (error) {
             console.error("AI Service Error:", error);
-            throw error; // Re-throw to be caught by the UI
+            throw error;
         }
     },
 
@@ -115,6 +164,38 @@ export const aiService = {
             });
         });
         // Remove duplicates and limit
+        const unique = Array.from(new Map(videos.map(v => [v.id, v])).values());
+        return unique.slice(0, 4);
+    },
+
+    /**
+     * Extracts YouTube videos from already-transformed roadmap data
+     * (which still retains 'resources' from the transform step)
+     */
+    extractVideosFromTransformed: (transformedRoadmap) => {
+        const videos = [];
+        (transformedRoadmap || []).forEach(week => {
+            (week.resources || []).forEach(res => {
+                const url = res.url;
+                if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
+                    let videoId = '';
+                    if (url.includes('v=')) {
+                        videoId = url.split('v=')[1]?.split('&')[0];
+                    } else if (url.includes('youtu.be/')) {
+                        videoId = url.split('youtu.be/')[1]?.split('?')[0];
+                    }
+                    if (videoId) {
+                        videos.push({
+                            id: videoId,
+                            url: url,
+                            title: res.skill || "Skill Tutorial",
+                            thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+                            channel: "AI Recommendation"
+                        });
+                    }
+                }
+            });
+        });
         const unique = Array.from(new Map(videos.map(v => [v.id, v])).values());
         return unique.slice(0, 4);
     },
@@ -200,11 +281,11 @@ export const aiService = {
     /**
      * Chatbot logic — Connected to AI Interview Coach
      */
-    getChatbotResponse: async (history, userInput) => {
+    getChatbotResponse: async (history, userInput, userEmail) => {
         try {
             const response = await api.post('/voice/chat-text', {
                 message: userInput,
-                user_email: "user@example.com"
+                user_email: userEmail || "user@example.com"
             });
 
             // Backend returns AI text in X-AI-Response header

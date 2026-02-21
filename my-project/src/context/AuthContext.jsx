@@ -37,6 +37,23 @@ export function AuthProvider({ children }) {
             }
 
             // map backend structure to frontend state
+            // Check if we have locally-persisted analysis data that's better than backend
+            const cachedUser = JSON.parse(localStorage.getItem('prepnova_current_user') || '{}');
+            const backendHasAnalysis = (d.matched_skills?.length > 0 || d.missing_skills?.length > 0) && d.match_percentage > 0;
+            const localHasAnalysis = cachedUser?.hasAnalyzed && cachedUser?.personalSkillGaps?.score > 0;
+
+            // Use local analysis data if backend hasn't persisted it yet
+            const useLocalAnalysis = !backendHasAnalysis && localHasAnalysis;
+
+            const skillGaps = useLocalAnalysis ? cachedUser.personalSkillGaps : {
+                score: d.match_percentage || 0,
+                matched: d.matched_skills || [],
+                missing: d.missing_skills || [],
+                moderate: d.moderate_skills || [],
+                priority: d.missing_skills?.slice(0, 3) || [],
+                radarData: aiService.calculateRadarData(d.match_percentage || 0)
+            };
+
             const fullUser = {
                 ...profileRes.data,
                 xp: d.xp,
@@ -45,16 +62,10 @@ export function AuthProvider({ children }) {
                 streak: d.streak,
                 earnedBadges: d.earned_badges || [],
                 dailyXp: d.daily_xp || {},
-                personalSkillGaps: {
-                    score: d.match_percentage || 0,
-                    matched: d.matched_skills || [],
-                    missing: d.missing_skills || [],
-                    priority: d.missing_skills?.slice(0, 3) || [],
-                    radarData: aiService.calculateRadarData(d.match_percentage || 0)
-                },
-                personalRoadmap,
-                personalProjects,
-                personalVideos,
+                personalSkillGaps: skillGaps,
+                personalRoadmap: useLocalAnalysis && personalRoadmap.length <= 1 ? (cachedUser.personalRoadmap || personalRoadmap) : personalRoadmap,
+                personalProjects: useLocalAnalysis && personalProjects.length === 0 ? (cachedUser.personalProjects || personalProjects) : personalProjects,
+                personalVideos: useLocalAnalysis ? (cachedUser.personalVideos || personalVideos) : personalVideos,
                 completedSkills: d.completed_skills || [],
                 totalProgress: d.total_progress_percentage || 0,
                 projectProgress: d.project_progress || [],
@@ -66,7 +77,7 @@ export function AuthProvider({ children }) {
                     }
                     return acc;
                 }, { mcq: 0, hr: 0, coding: 0 }),
-                hasAnalyzed: d.match_percentage !== null && d.match_percentage !== undefined,
+                hasAnalyzed: backendHasAnalysis || useLocalAnalysis || cachedUser?.hasAnalyzed || false,
                 isJobReady: d.total_progress_percentage >= 100,
                 // Add default "Cool Avatar" logic
                 avatar: profileRes.data.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${profileRes.data.name}&backgroundColor=00f5ff,6366f1`
@@ -227,12 +238,15 @@ export function AuthProvider({ children }) {
                 ...prev,
                 personalRoadmap: roadmap,
                 personalSkillGaps: skillGaps,
+                personalVideos: videos || [],
                 personalProjects: projects,
                 hasAnalyzed: true
             };
             localStorage.setItem('prepnova_current_user', JSON.stringify(updated));
             return updated;
         });
+        // Note: Do NOT call verifySession() here — it would overwrite the fresh
+        // analysis data with stale backend data before the backend has time to persist.
     };
 
     return (

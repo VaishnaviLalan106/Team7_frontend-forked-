@@ -33,11 +33,18 @@ export default function ResumeAnalyzer() {
         try {
             // Real AI Analysis — Generate ALL related data at once
             const result = await aiService.analyzeResume(resumeFile, jdText);
+            console.log("Analysis Result:", result);
+
             const roadmapData = await aiService.generateRoadmap();
+            console.log("Roadmap Data:", roadmapData);
+
+            // Extract videos from roadmap resources
+            const videos = aiService.extractVideosFromTransformed(roadmapData.roadmap);
+            console.log("Extracted Videos:", videos);
 
             // Persist to Context (which saves to database/token via AuthContext updates)
             setAnalysisResult(result);
-            setPersonalData(roadmapData.roadmap, result, [], roadmapData.projects);
+            setPersonalData(roadmapData.roadmap, result, videos, roadmapData.projects);
             setAnalyzed(true);
 
         } catch (error) {
